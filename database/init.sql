@@ -1,0 +1,83 @@
+-- PostgreSQL Database Initialization Script
+-- Smart Business Management & Tracking System
+
+-- Create database (run this manually if needed)
+-- CREATE DATABASE business_management;
+
+-- The tables will be created automatically by SQLAlchemy
+-- This file is for reference and manual setup if needed
+
+-- Users table (created by SQLAlchemy)
+-- CREATE TABLE users (
+--     id SERIAL PRIMARY KEY,
+--     email VARCHAR UNIQUE NOT NULL,
+--     username VARCHAR UNIQUE NOT NULL,
+--     hashed_password VARCHAR NOT NULL,
+--     full_name VARCHAR NOT NULL,
+--     role VARCHAR NOT NULL DEFAULT 'employee',
+--     is_active BOOLEAN DEFAULT TRUE,
+--     created_at VARCHAR
+-- );
+
+-- Sales table (created by SQLAlchemy)
+-- CREATE TABLE sales (
+--     id SERIAL PRIMARY KEY,
+--     transaction_id VARCHAR UNIQUE NOT NULL,
+--     customer_name VARCHAR NOT NULL,
+--     product_id INTEGER REFERENCES inventory(id),
+--     quantity INTEGER NOT NULL,
+--     unit_price FLOAT NOT NULL,
+--     total_amount FLOAT NOT NULL,
+--     payment_method VARCHAR,
+--     status VARCHAR DEFAULT 'completed',
+--     user_id INTEGER REFERENCES users(id),
+--     notes TEXT,
+--     created_at TIMESTAMP DEFAULT NOW(),
+--     updated_at TIMESTAMP DEFAULT NOW()
+-- );
+
+-- Inventory table (created by SQLAlchemy)
+-- CREATE TABLE inventory (
+--     id SERIAL PRIMARY KEY,
+--     sku VARCHAR UNIQUE NOT NULL,
+--     name VARCHAR NOT NULL,
+--     description TEXT,
+--     category VARCHAR,
+--     quantity INTEGER DEFAULT 0 NOT NULL,
+--     reorder_level INTEGER DEFAULT 10,
+--     unit_price FLOAT NOT NULL,
+--     supplier VARCHAR,
+--     location VARCHAR,
+--     status VARCHAR DEFAULT 'active',
+--     created_at TIMESTAMP DEFAULT NOW(),
+--     updated_at TIMESTAMP DEFAULT NOW()
+-- );
+
+-- Employees table (created by SQLAlchemy)
+-- CREATE TABLE employees (
+--     id SERIAL PRIMARY KEY,
+--     employee_id VARCHAR UNIQUE NOT NULL,
+--     user_id INTEGER UNIQUE REFERENCES users(id),
+--     department VARCHAR,
+--     position VARCHAR,
+--     salary FLOAT,
+--     hire_date TIMESTAMP,
+--     status VARCHAR DEFAULT 'active',
+--     phone VARCHAR,
+--     address TEXT,
+--     emergency_contact VARCHAR,
+--     notes TEXT,
+--     created_at TIMESTAMP DEFAULT NOW(),
+--     updated_at TIMESTAMP DEFAULT NOW()
+-- );
+
+-- Note: All tables are created automatically by SQLAlchemy when the application starts
+-- Run: python backend/main.py to initialize the database
+
+
+
+
+
+
+
+

@@ -1,0 +1,21 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+sqlalchemy>=2.0.28  # Updated for Python 3.13 compatibility (2.0.23 has issues)
+psycopg2-binary>=2.9.9  # Updated for Python 3.14 wheel support
+pymongo==4.6.0
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+pydantic>=2.9.0  # Updated for Python 3.14 compatibility with pre-built wheels
+pydantic-settings>=2.1.0
+python-dotenv==1.0.0
+email-validator>=2.0.0
+# OCR dependencies
+pytesseract>=0.3.10
+pdf2image>=1.16.3
+Pillow>=10.0.0
+# PDF and Export dependencies
+reportlab>=4.0.0
+openpyxl>=3.1.0
+
+
