@@ -87,7 +87,4 @@ Once the backend is running, visit:
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
 
-## 📝 License
-
-MIT
 
