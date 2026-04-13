@@ -4,12 +4,17 @@ __pycache__/
 *$py.class
 *.so
 .Python
+.venv/
 venv/
 env/
 ENV/
 *.egg-info/
 dist/
 build/
+pip-wheel-metadata/
+.mypy_cache/
+.ruff_cache/
+
 
 # Node
 node_modules/
@@ -19,6 +24,9 @@ yarn-error.log*
 .pnpm-debug.log*
 .npm
 .eslintcache
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
 
 # React
 frontend/build/
@@ -60,11 +68,13 @@ htmlcov/
 .nox/
 coverage.xml
 *.cover
+coverage/
 
 # OCR and uploads
 backend/uploads/
 backend/temp/
 frontend/uploads/
+backend/.pytest_cache/
 
 # Backup files
 *.bak
@@ -74,12 +84,18 @@ frontend/uploads/
 # Cache
 .cache/
 .parcel-cache/
+tmp/
+temp/
 
 # Database dumps
 *.dump
+*.sql.gz
 
 # Scripts (moved to scripts folder)
 backend/scripts/
+
+# Generated exports
+backend/sales_export.csv
 
 # Production
 .vercel
