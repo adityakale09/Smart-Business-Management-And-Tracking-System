@@ -108,6 +108,7 @@ python test_new_endpoints.py
 - Active, operational docs stay at root only when needed for onboarding.
 - Historical notes, status snapshots, and one-off runbooks are moved to `archive/docs/`.
 - One-off debug/admin helper scripts are moved to `archive/scripts/`.
+- Archive index and restore guidance: `archive/README.md`.
 
 ## 8. Troubleshooting Quick Checks
 
