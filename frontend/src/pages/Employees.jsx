@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { employeesAPI } from '../api/employees'
 import { authAPI } from '../api/auth'
@@ -6,11 +6,32 @@ import { Users, Plus, X } from 'lucide-react'
 import { getErrorMessage } from '../utils/errorHandler'
 import './Employees.css'
 
+const normalizeEmployeesPayload = (payload) => {
+  if (!payload) {
+    return []
+  }
+
+  if (Array.isArray(payload)) {
+    return payload
+  }
+
+  if (Array.isArray(payload.items)) {
+    return payload.items
+  }
+
+  if (Array.isArray(payload.employees)) {
+    return payload.employees
+  }
+
+  return []
+}
+
 const Employees = () => {
   const [showModal, setShowModal] = useState(false)
   const [formData, setFormData] = useState({
     employee_id: '',
     user_id: '',
+    full_name: '',
     department: '',
     position: '',
     salary: '',
@@ -21,10 +42,15 @@ const Employees = () => {
   })
   const queryClient = useQueryClient()
 
-  const { data: employees, isLoading } = useQuery({
+  const { data: employeesPayload, isLoading, isError, error } = useQuery({
     queryKey: ['employees'],
     queryFn: () => employeesAPI.getAll(),
+    onError: (err) => {
+      console.error('[Employees] Failed to load employees:', err)
+    },
   })
+
+  const employees = normalizeEmployeesPayload(employeesPayload)
 
   const { data: currentUser } = useQuery({
     queryKey: ['current-user'],
@@ -39,6 +65,7 @@ const Employees = () => {
       setFormData({
         employee_id: '',
         user_id: '',
+        full_name: '',
         department: '',
         position: '',
         salary: '',
@@ -144,6 +171,16 @@ const Employees = () => {
     createEmployeeMutation.mutate(employeeData)
   }
 
+  useEffect(() => {
+    if (employeesPayload !== undefined) {
+      console.log('[Employees] Employees list response:', employeesPayload)
+    }
+  }, [employeesPayload])
+
+  useEffect(() => {
+    console.log('[Employees] Employees rows:', employees)
+  }, [employees])
+
   return (
     <div className="employees-page">
       <div className="page-header">
@@ -159,6 +196,10 @@ const Employees = () => {
 
       {isLoading ? (
         <div className="loading">Loading employees...</div>
+      ) : isError ? (
+        <div className="error-message">
+          {getErrorMessage(error) || 'Failed to load employees.'}
+        </div>
       ) : (
         <div className="employees-grid">
           {employees && employees.length > 0 ? (
@@ -169,6 +210,7 @@ const Employees = () => {
                 </div>
                 <div className="employee-info">
                   <h3>Employee ID: {employee.employee_id}</h3>
+                  <p className="employee-name">{employee.full_name || 'No name'}</p>
                   <p className="employee-position">{employee.position || 'N/A'}</p>
                   <p className="employee-department">{employee.department || 'N/A'}</p>
                   {employee.phone && <p className="employee-phone">Phone: {employee.phone}</p>}
@@ -195,21 +237,24 @@ const Employees = () => {
             </div>
             <form onSubmit={handleSubmit} className="modal-form">
               <div className="form-group">
-                <label>Employee ID *</label>
+                <label htmlFor="employee_id">Employee ID *</label>
                 <input
+                  id="employee_id"
                   type="text"
+                  placeholder="Enter employee ID"
                   value={formData.employee_id}
                   onChange={(e) => setFormData({ ...formData, employee_id: e.target.value })}
                   required
                 />
               </div>
               <div className="form-group">
-                <label>User ID *</label>
+                <label htmlFor="user_id">User ID *</label>
                 <input
+                  id="user_id"
                   type="number"
+                  placeholder={currentUser ? `Current user ID: ${currentUser.id}` : 'Enter user ID'}
                   value={formData.user_id}
                   onChange={(e) => setFormData({ ...formData, user_id: e.target.value })}
-                  placeholder={currentUser ? `Current user ID: ${currentUser.id}` : 'Enter user ID'}
                   required
                 />
                 {currentUser && (
@@ -217,59 +262,73 @@ const Employees = () => {
                 )}
               </div>
               <div className="form-group">
-                <label>Department</label>
+                <label htmlFor="department">Department</label>
                 <input
+                  id="department"
                   type="text"
+                  placeholder="Department (optional)"
                   value={formData.department}
                   onChange={(e) => setFormData({ ...formData, department: e.target.value })}
                 />
               </div>
               <div className="form-group">
-                <label>Position</label>
+                <label htmlFor="position">Position</label>
                 <input
+                  id="position"
                   type="text"
+                  placeholder="Position (optional)"
                   value={formData.position}
                   onChange={(e) => setFormData({ ...formData, position: e.target.value })}
                 />
               </div>
               <div className="form-group">
-                <label>Salary</label>
+                <label htmlFor="salary">Salary</label>
                 <input
+                  id="salary"
                   type="number"
                   step="0.01"
                   min="0"
+                  placeholder="Salary (optional)"
                   value={formData.salary}
                   onChange={(e) => setFormData({ ...formData, salary: e.target.value })}
                 />
               </div>
               <div className="form-group">
-                <label>Hire Date</label>
+                <label htmlFor="hire_date">Hire Date</label>
                 <input
+                  id="hire_date"
                   type="date"
+                  placeholder="dd-mm-yyyy"
                   value={formData.hire_date}
                   onChange={(e) => setFormData({ ...formData, hire_date: e.target.value })}
                 />
               </div>
               <div className="form-group">
-                <label>Phone</label>
+                <label htmlFor="phone">Phone</label>
                 <input
+                  id="phone"
                   type="text"
+                  placeholder="Phone (optional)"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                 />
               </div>
               <div className="form-group">
-                <label>Address</label>
+                <label htmlFor="address">Address</label>
                 <textarea
+                  id="address"
+                  placeholder="Address (optional)"
                   value={formData.address}
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                   rows="2"
                 />
               </div>
               <div className="form-group">
-                <label>Emergency Contact</label>
+                <label htmlFor="emergency_contact">Emergency Contact</label>
                 <input
+                  id="emergency_contact"
                   type="text"
+                  placeholder="Emergency contact (optional)"
                   value={formData.emergency_contact}
                   onChange={(e) => setFormData({ ...formData, emergency_contact: e.target.value })}
                 />

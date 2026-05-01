@@ -39,6 +39,7 @@ class ReceiptProcessingResult(BaseModel):
     """Receipt processing result schema"""
     success: bool
     receipt_id: Optional[int] = None
+    currency_code: Optional[str] = None
     items_processed: int = 0
     items: List[Dict[str, Any]] = []
     inventory_updates: List[Dict[str, Any]] = []

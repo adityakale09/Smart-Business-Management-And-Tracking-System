@@ -19,17 +19,10 @@ export const analyticsAPI = {
   },
 
   getEmployeePerformance: async (days = 30) => {
-    const response = await apiClient.get('/api/analytics/employee/performance', {
+    const response = await apiClient.get('/api/analytics/employees/performance', {
       params: { days },
     })
     return response.data
   },
 }
-
-
-
-
-
-
-
 

@@ -20,10 +20,134 @@ from app.receipt_processor.update_inventory import process_receipt_data
 router = APIRouter()
 
 
+def _apply_currency_conversion(parsed_data: dict, source_currency: str, target_currency: str, exchange_rate: float):
+    """Convert parsed receipt prices from source currency into target currency before persistence."""
+    source = (source_currency or '').upper().strip()
+    target = (target_currency or '').upper().strip()
+
+    if not source or not target or source == target:
+        return
+
+    if exchange_rate <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid exchange rate provided for receipt conversion."
+        )
+
+    items = parsed_data.get('items', []) or []
+    for item in items:
+        unit_price = float(item.get('unit_price', 0.0) or 0.0)
+        total_price = float(item.get('total_price', 0.0) or 0.0)
+        item['unit_price'] = round(unit_price * exchange_rate, 2)
+        item['total_price'] = round(total_price * exchange_rate, 2)
+
+    total_amount = float(parsed_data.get('total_amount', 0.0) or 0.0)
+    parsed_data['total_amount'] = round(total_amount * exchange_rate, 2)
+    parsed_data['currency_code'] = target
+
+
+def _validate_and_parse_receipt(file: UploadFile, file_content: bytes, require_items: bool = True):
+    """Common validation and OCR+parsing pipeline used by preview and upload endpoints."""
+    allowed_extensions = {'.jpg', '.jpeg', '.png', '.pdf'}
+    file_ext = '.' + (file.filename.split('.')[-1] if '.' in file.filename else '')
+
+    if file_ext.lower() not in allowed_extensions:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported file type. Allowed: {', '.join(allowed_extensions)}"
+        )
+
+    if len(file_content) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Empty file uploaded"
+        )
+
+    try:
+        extracted_text = ocr_service.extract_text_from_file(file_content, file.filename)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"OCR extraction failed: {str(e)}"
+        )
+
+    if not extracted_text or len(extracted_text.strip()) < 10:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Could not extract sufficient text from receipt. Please ensure the image is clear and readable."
+        )
+
+    try:
+        parsed_data = receipt_parser.parse_receipt(extracted_text)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Receipt parsing failed: {str(e)}"
+        )
+
+    if require_items and (not parsed_data.get('items') or len(parsed_data['items']) == 0):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No items found in receipt. Please check the receipt format."
+        )
+
+    return parsed_data, extracted_text, file_ext
+
+
+@router.post("/preview-receipt")
+async def preview_receipt(
+    file: UploadFile = File(...),
+    receipt_type: Optional[str] = Form(None),
+    current_user: dict = Depends(require_min_role("employee"))
+):
+    """
+    Preview OCR and parsed receipt items without saving receipt or updating inventory.
+    """
+    try:
+        file_content = await file.read()
+        parsed_data, extracted_text, _ = _validate_and_parse_receipt(file, file_content, require_items=False)
+
+        if receipt_type and receipt_type.lower() in ['purchase', 'sale']:
+            parsed_data['receipt_type'] = receipt_type.lower()
+
+        items = parsed_data.get('items', [])
+        has_items = len(items) > 0
+        non_empty_lines = [line.strip() for line in extracted_text.splitlines() if line.strip()]
+
+        return {
+            'success': has_items,
+            'message': (
+                'Receipt parsed successfully. Please review extracted items before processing.'
+                if has_items else
+                'OCR completed, but items were not confidently extracted. Review OCR text below and try a clearer crop or higher resolution.'
+            ),
+            'currency_code': parsed_data.get('currency_code', 'INR'),
+            'receipt_type': parsed_data.get('receipt_type'),
+            'receipt_date': parsed_data.get('receipt_date').isoformat() if parsed_data.get('receipt_date') else None,
+            'source': parsed_data.get('source'),
+            'total_amount': parsed_data.get('total_amount', 0.0),
+            'items_processed': len(items),
+            'items': items,
+            'ocr_text_preview': extracted_text[:3000],
+            'ocr_lines_preview': non_empty_lines[:80]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Receipt preview failed: {str(e)}"
+        )
+
+
 @router.post("/upload-receipt", response_model=ReceiptProcessingResult)
 async def upload_receipt(
     file: UploadFile = File(...),
     receipt_type: Optional[str] = Form(None),
+    source_currency: Optional[str] = Form(None),
+    target_currency: Optional[str] = Form(None),
+    exchange_rate: Optional[float] = Form(None),
     current_user: dict = Depends(require_min_role("employee")),
     db: Session = Depends(get_db)
 ):
@@ -33,59 +157,19 @@ async def upload_receipt(
     Supported formats: JPG, PNG, PDF
     """
     try:
-        # Validate file type
-        allowed_extensions = {'.jpg', '.jpeg', '.png', '.pdf'}
-        file_ext = '.' + (file.filename.split('.')[-1] if '.' in file.filename else '')
-        
-        if file_ext.lower() not in allowed_extensions:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unsupported file type. Allowed: {', '.join(allowed_extensions)}"
-            )
-        
-        # Read file content
         file_content = await file.read()
-        
-        if len(file_content) == 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Empty file uploaded"
-            )
-        
-        # Extract text using OCR
-        try:
-            extracted_text = ocr_service.extract_text_from_file(file_content, file.filename)
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"OCR extraction failed: {str(e)}"
-            )
-        
-        if not extracted_text or len(extracted_text.strip()) < 10:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Could not extract sufficient text from receipt. Please ensure the image is clear and readable."
-            )
-        
-        # Parse receipt text
-        try:
-            parsed_data = receipt_parser.parse_receipt(extracted_text)
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Receipt parsing failed: {str(e)}"
-            )
+        parsed_data, _, file_ext = _validate_and_parse_receipt(file, file_content, require_items=True)
         
         # Override receipt type if provided
         if receipt_type and receipt_type.lower() in ['purchase', 'sale']:
             parsed_data['receipt_type'] = receipt_type.lower()
-        
-        # Validate parsed data
-        if not parsed_data.get('items') or len(parsed_data['items']) == 0:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="No items found in receipt. Please check the receipt format."
-            )
+
+        # Apply UI-selected currency conversion to persisted inventory values.
+        parsed_currency = (parsed_data.get('currency_code') or 'INR').upper()
+        source = (source_currency or parsed_currency).upper()
+        target = (target_currency or parsed_currency).upper()
+        rate = float(exchange_rate) if exchange_rate is not None else 1.0
+        _apply_currency_conversion(parsed_data, source, target, rate)
         
         # Get user ID
         user_id = int(current_user.get('user_id'))
@@ -96,6 +180,7 @@ async def upload_receipt(
         
         # Process receipt and update inventory
         result = process_receipt_data(db, parsed_data, user_id)
+        result['currency_code'] = parsed_data.get('currency_code', 'INR')
         
         if not result.get('success'):
             raise HTTPException(

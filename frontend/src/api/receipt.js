@@ -1,18 +1,47 @@
 import apiClient from './client'
 
 export const receiptAPI = {
-    // Upload and process receipt
-    uploadReceipt: async(file, receiptType = null) => {
+    // Preview extracted receipt items (OCR + parse only)
+    previewReceipt: async(file, receiptType = null, options = {}) => {
         const formData = new FormData()
         formData.append('file', file)
         if (receiptType) {
             formData.append('receipt_type', receiptType)
         }
 
+        const response = await apiClient.post('/api/receipts/preview-receipt', formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+            timeout: options.timeout ?? 90000,
+            signal: options.signal,
+        })
+        return response.data
+    },
+
+    // Upload and process receipt
+    uploadReceipt: async(file, receiptType = null, conversion = null, options = {}) => {
+        const formData = new FormData()
+        formData.append('file', file)
+        if (receiptType) {
+            formData.append('receipt_type', receiptType)
+        }
+        if (conversion?.sourceCurrency) {
+            formData.append('source_currency', conversion.sourceCurrency)
+        }
+        if (conversion?.targetCurrency) {
+            formData.append('target_currency', conversion.targetCurrency)
+        }
+        if (typeof conversion?.exchangeRate === 'number' && Number.isFinite(conversion.exchangeRate)) {
+            formData.append('exchange_rate', String(conversion.exchangeRate))
+        }
+
         const response = await apiClient.post('/api/receipts/upload-receipt', formData, {
             headers: {
                 'Content-Type': 'multipart/form-data',
             },
+            timeout: options.timeout ?? 180000,
+            signal: options.signal,
         })
         return response.data
     },

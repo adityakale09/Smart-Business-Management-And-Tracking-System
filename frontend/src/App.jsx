@@ -9,6 +9,7 @@ import Employees from './pages/Employees'
 import Analytics from './pages/Analytics'
 import Settings from './pages/Settings'
 import UserManagement from './pages/UserManagement'
+import { AuditLogs } from './pages/AuditLogs'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import ErrorBoundary from './components/ErrorBoundary'
@@ -37,6 +38,7 @@ function App() {
           <Route path="analytics" element={<ErrorBoundary><Analytics /></ErrorBoundary>} />
           <Route path="settings" element={<ErrorBoundary><Settings /></ErrorBoundary>} />
           <Route path="users" element={<ErrorBoundary><UserManagement /></ErrorBoundary>} />
+          <Route path="audit-logs" element={<ErrorBoundary><AuditLogs /></ErrorBoundary>} />
         </Route>
       </Routes>
     </ErrorBoundary>
@@ -44,7 +46,4 @@ function App() {
 }
 
 export default App
-
-
-
 

@@ -1,7 +1,7 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import { useTheme } from '../context/ThemeContext'
-import { LogOut, LayoutDashboard, ShoppingCart, Package, Users, BarChart3, Receipt, Settings, UserCog, Moon, Sun } from 'lucide-react'
+import { LogOut, LayoutDashboard, ShoppingCart, Package, Users, BarChart3, Receipt, Settings, UserCog, Moon, Sun, Shield } from 'lucide-react'
 import './Layout.css'
 
 const Layout = () => {
@@ -21,6 +21,7 @@ const Layout = () => {
   const settingsNavigation = [
     { name: 'Settings', path: '/settings', icon: Settings },
     { name: 'User Management', path: '/users', icon: UserCog, adminOnly: true },
+    { name: 'Audit Logs', path: '/audit-logs', icon: Shield, adminOnly: true },
   ]
 
   const handleLogout = () => {

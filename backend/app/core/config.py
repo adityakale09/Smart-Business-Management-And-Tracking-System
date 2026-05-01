@@ -2,7 +2,7 @@
 Application Configuration
 """
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
 
 
@@ -16,13 +16,13 @@ class Settings(BaseSettings):
     PORT: int = 8000
     
     # Security
-    SECRET_KEY: str = "ad1NLKyw2TgpgR_pUd182uhAVWYy74g8KYwwUlg2m2s"  # Override in .env for production
+    SECRET_KEY: str = ""  # Set in .env file
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
     # Database - PostgreSQL
     POSTGRES_USER: str = "postgres"
-    POSTGRES_PASSWORD: str = "ADITYA@KALE"
+    POSTGRES_PASSWORD: str = ""  # Set in .env file
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: str = "5432"
     POSTGRES_DB: str = "business_platform"
@@ -40,17 +40,11 @@ class Settings(BaseSettings):
     # Redis (for real-time features)
     REDIS_URL: str = "redis://localhost:6379"
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore"  # Ignore extra environment variables
+    )
 
 
 settings = Settings()
-
-
-
-
-
-
-
-

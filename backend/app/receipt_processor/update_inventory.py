@@ -7,7 +7,9 @@ from typing import List, Dict
 from app.models.inventory import Inventory
 from app.models.receipt import Receipt, ReceiptItem
 from app.models.user import User
+from app.models.sales import Sale
 from datetime import datetime
+import uuid
 
 
 class InventoryUpdater:
@@ -34,6 +36,7 @@ class InventoryUpdater:
         source = receipt_data.get('source', 'Unknown')
         total_amount = receipt_data.get('total_amount', 0.0)
         image_data = receipt_data.get('image_data')
+        currency_code = receipt_data.get('currency_code', 'INR')
         
         # Create receipt record
         receipt = Receipt(
@@ -76,6 +79,24 @@ class InventoryUpdater:
                 receipt_type=receipt_type,
                 user_id=user_id
             )
+
+            # For sale receipts, persist a sales transaction so analytics/dashboard update correctly.
+            if receipt_type == 'sale' and inventory_result.get('success'):
+                inventory_id = inventory_result.get('inventory_id')
+                sale_total = round(float(unit_price) * int(quantity), 2)
+                sale_record = Sale(
+                    transaction_id=f"RCP-{uuid.uuid4().hex[:8].upper()}",
+                    customer_name=source if source and source != 'Unknown' else 'Receipt Customer',
+                    product_id=inventory_id,
+                    quantity=int(quantity),
+                    unit_price=float(unit_price),
+                    total_amount=sale_total,
+                    payment_method='receipt_upload',
+                    status='completed',
+                    user_id=user_id,
+                    notes=f"Auto-created from receipt #{receipt.id} ({currency_code})"
+                )
+                self.db.add(sale_record)
             
             processed_items.append({
                 'product_name': product_name,
@@ -202,6 +223,7 @@ class InventoryUpdater:
             return {
                 'success': True,
                 'product_name': product_name,
+                'inventory_id': inventory.id,
                 'previous_quantity': previous_quantity,
                 'new_quantity': inventory.quantity,
                 'message': message

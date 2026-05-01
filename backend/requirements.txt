@@ -5,9 +5,11 @@ psycopg2-binary>=2.9.9  # Updated for Python 3.14 wheel support
 pymongo==4.6.0
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
 python-multipart==0.0.6
 pydantic>=2.9.0  # Updated for Python 3.14 compatibility with pre-built wheels
 pydantic-settings>=2.1.0
+alembic>=1.13.0
 python-dotenv==1.0.0
 email-validator>=2.0.0
 # OCR dependencies

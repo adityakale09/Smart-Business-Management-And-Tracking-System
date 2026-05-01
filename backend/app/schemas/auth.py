@@ -20,7 +20,7 @@ class UserRegister(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     password: str = Field(..., min_length=8)
     full_name: str = Field(..., min_length=2, max_length=100)
-    role: UserRole = UserRole.EMPLOYEE
+    # role removed from registration; always assigned default in backend
     
     @field_validator('password')
     @classmethod

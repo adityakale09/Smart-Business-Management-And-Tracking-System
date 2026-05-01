@@ -3,22 +3,19 @@ Smart Business Management & Tracking System - Main Application
 FastAPI Backend Server
 """
 
-from fastapi import FastAPI, Depends, HTTPException, status, Request
+from fastapi import FastAPI, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import uvicorn
 
-from app.database import init_db
-from app.routers import auth, sales, inventory, employees, analytics, receipt, seed
+from app.routers import auth, sales, inventory, employees, analytics, receipt, seed, audit
 from app.core.config import settings
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize database on startup"""
-    await init_db()
+    """Application lifespan hooks for startup/shutdown."""
     yield
 
 
@@ -68,6 +65,7 @@ app.include_router(inventory.router, prefix="/api/inventory", tags=["Inventory"]
 app.include_router(employees.router, prefix="/api/employees", tags=["Employees"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
 app.include_router(receipt.router, prefix="/api/receipts", tags=["Receipt Processing"])
+app.include_router(audit.router, tags=["Audit Logs"])
 app.include_router(seed.router, prefix="/api", tags=["Database"])
 
 
@@ -111,6 +109,3 @@ if __name__ == "__main__":
         port=settings.PORT,
         reload=settings.DEBUG
     )
-
-
-

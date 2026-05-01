@@ -1,10 +1,42 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { salesAPI } from '../api/sales'
 import { inventoryAPI } from '../api/inventory'
 import { Plus, Search, X, Trash2, Download, FileText } from 'lucide-react'
 import { getErrorMessage } from '../utils/errorHandler'
+import { downloadBlob } from '../utils/fileDownload'
+import { isBlank, parseNonNegativeFloat, parsePositiveInt } from '../utils/validation'
 import './Sales.css'
+
+const normalizeSalesPayload = (payload) => {
+  if (!payload) {
+    return { items: [], total: 0, page: 1, page_size: 20 }
+  }
+
+  if (Array.isArray(payload)) {
+    return {
+      items: payload,
+      total: payload.length,
+      page: 1,
+      page_size: payload.length
+    }
+  }
+
+  if (Array.isArray(payload.items)) {
+    return payload
+  }
+
+  if (Array.isArray(payload.sales)) {
+    return {
+      items: payload.sales,
+      total: payload.sales.length,
+      page: payload.page ?? 1,
+      page_size: payload.page_size ?? payload.sales.length
+    }
+  }
+
+  return { items: [], total: 0, page: 1, page_size: 20 }
+}
 
 const Sales = () => {
   const [searchTerm, setSearchTerm] = useState('')
@@ -19,27 +51,39 @@ const Sales = () => {
   })
   const queryClient = useQueryClient()
 
-  const { data: sales, isLoading } = useQuery({
-    queryKey: ['sales'],
-    queryFn: () => salesAPI.getAll(),
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const { data: salesPayload, isLoading, isError, error } = useQuery({
+    queryKey: ['sales', { page, page_size: pageSize, search: searchTerm }],
+    queryFn: () => salesAPI.getAll({ page, page_size: pageSize, search: searchTerm }),
+    onError: (err) => {
+      console.error('[Sales] Failed to load sales list:', err)
+    },
+    keepPreviousData: true,
   })
+
+  const normalizedSales = normalizeSalesPayload(salesPayload)
+  const sales = normalizedSales.items || []
+  const total = normalizedSales.total || 0
 
   const { data: summary } = useQuery({
     queryKey: ['sales-summary'],
     queryFn: () => salesAPI.getSummary(30),
   })
 
-  const { data: inventory } = useQuery({
+  const { data: inventoryData } = useQuery({
     queryKey: ['inventory'],
     queryFn: () => inventoryAPI.getAll(),
-  })
+  });
+  const inventory = inventoryData?.items || [];
 
   const createSaleMutation = useMutation({
     mutationFn: (saleData) => salesAPI.create(saleData),
     onSuccess: () => {
-      queryClient.invalidateQueries(['sales'])
-      queryClient.invalidateQueries(['sales-summary'])
-      queryClient.invalidateQueries(['inventory'])
+      queryClient.invalidateQueries({ queryKey: ['sales'] })
+      queryClient.invalidateQueries({ queryKey: ['sales-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+      setPage(1)
       setShowModal(false)
       setFormData({
         customer_name: '',
@@ -55,11 +99,25 @@ const Sales = () => {
   const deleteSaleMutation = useMutation({
     mutationFn: (saleId) => salesAPI.delete(saleId),
     onSuccess: () => {
-      queryClient.invalidateQueries(['sales'])
-      queryClient.invalidateQueries(['sales-summary'])
-      queryClient.invalidateQueries(['inventory'])
+      queryClient.invalidateQueries({ queryKey: ['sales'] })
+      queryClient.invalidateQueries({ queryKey: ['sales-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory'] })
     },
   })
+
+  useEffect(() => {
+    if (salesPayload !== undefined) {
+      console.log('[Sales] Sales list response:', salesPayload)
+    }
+  }, [salesPayload])
+
+  useEffect(() => {
+    console.log('[Sales] Sales rows:', sales)
+  }, [sales])
+
+  useEffect(() => {
+    setPage(1)
+  }, [searchTerm])
 
   const handleDelete = (sale) => {
     if (window.confirm(`Are you sure you want to delete transaction ${sale.transaction_id}?\n\nCustomer: ${sale.customer_name}\nAmount: ₹${sale.total_amount.toLocaleString('en-IN')}`)) {
@@ -71,41 +129,41 @@ const Sales = () => {
     e.preventDefault()
     
     // Validate required fields
-    if (!formData.customer_name || !formData.customer_name.trim()) {
+    if (isBlank(formData.customer_name)) {
       alert('Please enter a customer name')
       return
     }
     
-    if (!formData.product_id || formData.product_id === '') {
+    if (isBlank(formData.product_id)) {
       alert('Please select a product')
       return
     }
     
-    if (!formData.quantity || formData.quantity === '') {
+    if (isBlank(formData.quantity)) {
       alert('Please enter a quantity')
       return
     }
     
-    if (!formData.unit_price || formData.unit_price === '') {
+    if (isBlank(formData.unit_price)) {
       alert('Please enter a unit price')
       return
     }
     
-    const productId = parseInt(formData.product_id)
-    const quantity = parseInt(formData.quantity)
-    const unitPrice = parseFloat(formData.unit_price)
+    const productId = parsePositiveInt(formData.product_id)
+    const quantity = parsePositiveInt(formData.quantity)
+    const unitPrice = parseNonNegativeFloat(formData.unit_price)
     
-    if (isNaN(productId) || productId <= 0) {
+    if (productId === null) {
       alert('Please select a valid product')
       return
     }
     
-    if (isNaN(quantity) || quantity <= 0) {
+    if (quantity === null) {
       alert('Please enter a valid quantity (greater than 0)')
       return
     }
     
-    if (isNaN(unitPrice) || unitPrice < 0) {
+    if (unitPrice === null) {
       alert('Please enter a valid unit price')
       return
     }
@@ -135,23 +193,12 @@ const Sales = () => {
     }
   }
 
-  const filteredSales = sales?.filter((sale) =>
-    sale.customer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    sale.transaction_id.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+
 
   const handleExportCSV = async () => {
     try {
       const response = await salesAPI.exportCSV()
-      const blob = new Blob([response], { type: 'text/csv' })
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `sales_${new Date().toISOString().split('T')[0]}.csv`
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
+      downloadBlob(response, 'text/csv', `sales_${new Date().toISOString().split('T')[0]}.csv`)
     } catch (error) {
       alert(getErrorMessage(error) || 'Failed to export CSV')
     }
@@ -160,15 +207,11 @@ const Sales = () => {
   const handleExportExcel = async () => {
     try {
       const response = await salesAPI.exportExcel()
-      const blob = new Blob([response], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `sales_${new Date().toISOString().split('T')[0]}.xlsx`
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
+      downloadBlob(
+        response,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        `sales_${new Date().toISOString().split('T')[0]}.xlsx`
+      )
     } catch (error) {
       alert(getErrorMessage(error) || 'Failed to export Excel')
     }
@@ -177,15 +220,7 @@ const Sales = () => {
   const handleDownloadInvoice = async (saleId) => {
     try {
       const response = await salesAPI.downloadInvoice(saleId)
-      const blob = new Blob([response], { type: 'application/pdf' })
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `invoice_${saleId}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
+      downloadBlob(response, 'application/pdf', `invoice_${saleId}.pdf`)
     } catch (error) {
       alert(getErrorMessage(error) || 'Failed to download invoice')
     }
@@ -249,7 +284,12 @@ const Sales = () => {
       <div className="sales-table-container">
         {isLoading ? (
           <div className="loading">Loading sales...</div>
+        ) : isError ? (
+          <div className="error-message">
+            {getErrorMessage(error) || 'Failed to load sales.'}
+          </div>
         ) : (
+          <>
           <table className="sales-table">
             <thead>
               <tr>
@@ -265,12 +305,12 @@ const Sales = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredSales?.length > 0 ? (
-                filteredSales.map((sale) => (
+              {sales?.length > 0 ? (
+                sales.map((sale) => (
                   <tr key={sale.id}>
                     <td>{sale.transaction_id}</td>
                     <td>{sale.customer_name}</td>
-                    <td>{sale.product_id}</td>
+                    <td>{sale.product_id ?? 'N/A'}</td>
                     <td>{sale.quantity}</td>
                     <td>₹{sale.total_amount.toFixed(2)}</td>
                     <td>
@@ -312,6 +352,18 @@ const Sales = () => {
               )}
             </tbody>
           </table>
+
+          <div className="pagination-controls">
+            <button disabled={page === 1} onClick={() => setPage(page - 1)}>Prev</button>
+            <span>Page {page} of {Math.ceil(total / pageSize) || 1}</span>
+            <button disabled={page * pageSize >= total} onClick={() => setPage(page + 1)}>Next</button>
+            <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }}>
+              {[10, 20, 50, 100].map(size => (
+                <option key={size} value={size}>{size} / page</option>
+              ))}
+            </select>
+          </div>
+          </>
         )}
       </div>
 
@@ -326,17 +378,20 @@ const Sales = () => {
             </div>
             <form onSubmit={handleSubmit} className="modal-form">
               <div className="form-group">
-                <label>Customer Name *</label>
+                <label htmlFor="customer_name">Customer Name *</label>
                 <input
+                  id="customer_name"
                   type="text"
+                  placeholder="Enter customer name"
                   value={formData.customer_name}
                   onChange={(e) => setFormData({ ...formData, customer_name: e.target.value })}
                   required
                 />
               </div>
               <div className="form-group">
-                <label>Product *</label>
+                <label htmlFor="product_id">Product *</label>
                 <select
+                  id="product_id"
                   value={formData.product_id}
                   onChange={handleProductChange}
                   required
@@ -350,29 +405,34 @@ const Sales = () => {
                 </select>
               </div>
               <div className="form-group">
-                <label>Quantity *</label>
+                <label htmlFor="quantity">Quantity *</label>
                 <input
+                  id="quantity"
                   type="number"
                   min="1"
+                  placeholder="Enter quantity"
                   value={formData.quantity}
                   onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
                   required
                 />
               </div>
               <div className="form-group">
-                <label>Unit Price *</label>
+                <label htmlFor="unit_price">Unit Price *</label>
                 <input
+                  id="unit_price"
                   type="number"
                   step="0.01"
                   min="0"
+                  placeholder="Enter unit price"
                   value={formData.unit_price}
                   onChange={(e) => setFormData({ ...formData, unit_price: e.target.value })}
                   required
                 />
               </div>
               <div className="form-group">
-                <label>Payment Method *</label>
+                <label htmlFor="payment_method">Payment Method *</label>
                 <select
+                  id="payment_method"
                   value={formData.payment_method}
                   onChange={(e) => setFormData({ ...formData, payment_method: e.target.value })}
                   required
@@ -384,8 +444,10 @@ const Sales = () => {
                 </select>
               </div>
               <div className="form-group">
-                <label>Notes</label>
+                <label htmlFor="notes">Notes</label>
                 <textarea
+                  id="notes"
+                  placeholder="Additional notes (optional)"
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                   rows="3"
@@ -413,11 +475,4 @@ const Sales = () => {
 }
 
 export default Sales
-
-
-
-
-
-
-
 

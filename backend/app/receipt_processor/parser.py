@@ -16,6 +16,41 @@ class ReceiptParser:
         self.price_pattern = re.compile(r'\$?\s*(\d+\.?\d{0,2})', re.IGNORECASE)
         self.quantity_pattern = re.compile(r'(\d+)\s*(?:x|×|@|ea|each|units?|pcs?|pieces?)', re.IGNORECASE)
         self.item_pattern = re.compile(r'^(.+?)\s+\$?\s*(\d+\.?\d{0,2})$', re.IGNORECASE | re.MULTILINE)
+        self.item_row_pattern = re.compile(
+            r'^\s*(\d+)\s+(.+?)\s+(\d+(?:\.\d{1,2})?)\s+(\d+(?:\.\d{1,2})?)\s*$',
+            re.IGNORECASE,
+        )
+        self.item_row_name_first_pattern = re.compile(
+            r'^\s*(.+?)\s+(\d+)\s+\$?\s*(\d+(?:\.\d{1,2})?)\s+\$?\s*(\d+(?:\.\d{1,2})?)\s*$',
+            re.IGNORECASE,
+        )
+        self.item_row_prices_only_pattern = re.compile(
+            r'^\s*(\d+)\s+\$?\s*(\d+(?:\.\d{1,2})?)\s+\$?\s*(\d+(?:\.\d{1,2})?)\s*$',
+            re.IGNORECASE,
+        )
+        self.item_row_single_amount_pattern = re.compile(
+            r'^\s*(\d+)\s+(.+?)\s+(\d+(?:\.\d{1,2})?)\s*$',
+            re.IGNORECASE,
+        )
+        self.inline_name_with_prices_pattern = re.compile(
+            r'^\s*(.+?)\s+\$?\s*(\d+(?:\.\d{1,2})?)\s+\$?\s*(\d+(?:\.\d{1,2})?)\s*$',
+            re.IGNORECASE,
+        )
+        # Common retail layout: SrNo Item Qty MRP Rate Value
+        self.retail_row_with_mrp_pattern = re.compile(
+            r'^\s*(\d{1,3})\s+(.+?)\s+(\d{1,3})\s+(\d+(?:\.\d{1,2})?)\s+(\d+(?:\.\d{1,2})?)\s+(\d+(?:\.\d{1,2})?)\s*$',
+            re.IGNORECASE,
+        )
+        # Common retail layout: SrNo Item Qty Rate Value
+        self.retail_row_pattern = re.compile(
+            r'^\s*(\d{1,3})\s+(.+?)\s+(\d{1,3})\s+(\d+(?:\.\d{1,2})?)\s+(\d+(?:\.\d{1,2})?)\s*$',
+            re.IGNORECASE,
+        )
+        # Variant without explicit serial number at row start
+        self.retail_row_no_sr_pattern = re.compile(
+            r'^\s*(.+?)\s+(\d{1,3})\s+(\d+(?:\.\d{1,2})?)\s+(\d+(?:\.\d{1,2})?)\s*$',
+            re.IGNORECASE,
+        )
         
     def parse_receipt(self, text: str) -> Dict:
         """
@@ -43,14 +78,42 @@ class ReceiptParser:
         
         # Extract source/store name
         source = self._extract_source(text)
+
+        # Detect currency used in receipt values
+        currency_code = self._detect_currency(text)
         
         return {
             'receipt_type': receipt_type,
             'receipt_date': receipt_date,
             'source': source,
             'items': items,
-            'total_amount': total
+            'total_amount': total,
+            'currency_code': currency_code,
         }
+
+    def _detect_currency(self, text: str) -> str:
+        """Detect currency code from symbols or currency keywords in OCR text."""
+        text_upper = (text or '').upper()
+
+        if '₹' in text or ' INR' in text_upper or 'RUPEE' in text_upper:
+            return 'INR'
+        if '$' in text or ' USD' in text_upper or 'DOLLAR' in text_upper:
+            return 'USD'
+        if '€' in text or ' EUR' in text_upper:
+            return 'EUR'
+        if '£' in text or ' GBP' in text_upper or 'POUND' in text_upper:
+            return 'GBP'
+        if ' AED' in text_upper:
+            return 'AED'
+        if ' CAD' in text_upper:
+            return 'CAD'
+        if ' AUD' in text_upper:
+            return 'AUD'
+        if ' JPY' in text_upper or '¥' in text:
+            return 'JPY'
+
+        # Keep existing behavior for local usage when symbol is unclear.
+        return 'INR'
     
     def _detect_receipt_type(self, text: str) -> str:
         """
@@ -120,55 +183,380 @@ class ReceiptParser:
         Returns:
             List of item dictionaries
         """
+        normalized_lines = [self._normalize_line(line) for line in lines]
+        normalized_lines = [line for line in normalized_lines if line]
+
         items = []
-        current_item = None
-        
-        for line in lines:
-            line = line.strip()
-            if not line or len(line) < 3:
+        seen = set()
+        start_index = self._find_item_table_start(normalized_lines)
+        in_table_lines = []
+
+        for line in normalized_lines[start_index:]:
+            if self._is_table_end_line(line) and in_table_lines:
+                break
+            if self._is_noise_line(line):
                 continue
-            
-            # Skip header/footer lines
-            if any(keyword in line.lower() for keyword in ['receipt', 'invoice', 'total', 'subtotal', 'tax', 'change', 'thank you']):
+            in_table_lines.append(line)
+
+        if not in_table_lines:
+            in_table_lines = [line for line in normalized_lines if not self._is_noise_line(line)]
+
+        pending_name_parts = []
+        pending_qty: Optional[int] = None
+        pending_unit_price: Optional[float] = None
+
+        for line in in_table_lines:
+            item = self._parse_complete_item_line(line)
+            if item:
+                self._append_item_if_new(items, seen, item)
+                pending_name_parts = []
+                pending_qty = None
+                pending_unit_price = None
                 continue
-            
-            # Try to match item with price pattern: "Item Name $XX.XX"
-            item_match = re.match(r'^(.+?)\s+(\d+\.?\d{0,2})\s*$', line)
-            if item_match:
-                product_name = item_match.group(1).strip()
-                price = float(item_match.group(2))
-                
-                # Extract quantity if present
-                qty_match = self.quantity_pattern.search(line)
-                quantity = int(qty_match.group(1)) if qty_match else 1
-                
-                # Calculate unit price
-                unit_price = price / quantity if quantity > 0 else price
-                
-                items.append({
+
+            prices_only_match = self.item_row_prices_only_pattern.match(line)
+            if prices_only_match and pending_name_parts:
+                quantity = int(prices_only_match.group(1))
+                unit_price = self._to_amount(prices_only_match.group(2))
+                total_price = self._to_amount(prices_only_match.group(3))
+                product_name = self._clean_product_name(' '.join(pending_name_parts))
+                item = {
                     'product_name': product_name,
                     'quantity': quantity,
                     'unit_price': unit_price,
-                    'total_price': price
-                })
+                    'total_price': total_price,
+                }
+                if self._is_valid_item(**item):
+                    self._append_item_if_new(items, seen, item)
+                pending_name_parts = []
+                pending_qty = None
+                pending_unit_price = None
                 continue
-            
-            # Try to match item with quantity and price: "Qty x Item Name $XX.XX"
-            qty_item_match = re.match(r'^(\d+)\s*(?:x|×|@)\s*(.+?)\s+(\d+\.?\d{0,2})\s*$', line)
-            if qty_item_match:
-                quantity = int(qty_item_match.group(1))
-                product_name = qty_item_match.group(2).strip()
-                price = float(qty_item_match.group(3))
-                unit_price = price / quantity if quantity > 0 else price
-                
-                items.append({
-                    'product_name': product_name,
-                    'quantity': quantity,
-                    'unit_price': unit_price,
-                    'total_price': price
-                })
-        
+
+            if self._looks_like_product_text(line):
+                pending_name_parts.append(line)
+                if len(pending_name_parts) > 3:
+                    pending_name_parts = pending_name_parts[-2:]
+                continue
+
+            if pending_name_parts:
+                numeric_tokens = self._extract_amount_tokens(line)
+
+                # Pattern: qty only (e.g., "2")
+                if pending_qty is None and re.match(r'^\s*\d{1,4}\s*$', line):
+                    pending_qty = int(line.strip())
+                    continue
+
+                # Pattern: qty + one amount (e.g., "2 30.00")
+                if len(numeric_tokens) == 2 and pending_qty is None and re.match(r'^\s*\d{1,4}\s+[\$₹]?\s*\d+(?:[\.,]\d{1,2})\s*$', line):
+                    pending_qty = int(float(numeric_tokens[0]))
+                    pending_unit_price = self._to_amount(numeric_tokens[1])
+                    continue
+
+                # Pattern: qty + unit + total already in one line (defensive fallback)
+                if len(numeric_tokens) >= 3 and pending_qty is None and re.match(r'^\s*\d{1,4}\s+', line):
+                    qty = int(float(numeric_tokens[0]))
+                    unit = self._to_amount(numeric_tokens[1])
+                    total = self._to_amount(numeric_tokens[2])
+                    item = {
+                        'product_name': self._clean_product_name(' '.join(pending_name_parts)),
+                        'quantity': qty,
+                        'unit_price': unit,
+                        'total_price': total,
+                    }
+                    if self._is_valid_item(**item):
+                        self._append_item_if_new(items, seen, item)
+                    pending_name_parts = []
+                    pending_qty = None
+                    pending_unit_price = None
+                    continue
+
+                # Pattern: amount only line(s), combined with previous qty/unit context.
+                if len(numeric_tokens) == 1 and re.match(r'^\s*[\$₹]?\s*\d+(?:[\.,]\d{1,2})\s*$', line):
+                    amount = self._to_amount(numeric_tokens[0])
+
+                    if pending_qty is not None and pending_unit_price is None:
+                        pending_unit_price = amount
+                        continue
+
+                    if pending_qty is not None and pending_unit_price is not None:
+                        item = {
+                            'product_name': self._clean_product_name(' '.join(pending_name_parts)),
+                            'quantity': pending_qty,
+                            'unit_price': pending_unit_price,
+                            'total_price': amount,
+                        }
+                        if self._is_valid_item(**item):
+                            self._append_item_if_new(items, seen, item)
+                        pending_name_parts = []
+                        pending_qty = None
+                        pending_unit_price = None
+                        continue
+
+                    # If quantity missing, infer from two amount lines.
+                    if pending_qty is None and pending_unit_price is None:
+                        pending_unit_price = amount
+                        continue
+
+                    if pending_qty is None and pending_unit_price is not None:
+                        inferred_qty = int(round(amount / pending_unit_price)) if pending_unit_price > 0 else 1
+                        inferred_qty = max(inferred_qty, 1)
+                        item = {
+                            'product_name': self._clean_product_name(' '.join(pending_name_parts)),
+                            'quantity': inferred_qty,
+                            'unit_price': pending_unit_price,
+                            'total_price': amount,
+                        }
+                        if self._is_valid_item(**item):
+                            self._append_item_if_new(items, seen, item)
+                        pending_name_parts = []
+                        pending_qty = None
+                        pending_unit_price = None
+                        continue
+
+            if pending_name_parts and self._looks_like_price_line_without_qty(line):
+                amounts = re.findall(r'\d+(?:\.\d{1,2})', line)
+                if len(amounts) >= 2:
+                    unit_price = self._to_amount(amounts[-2])
+                    total_price = self._to_amount(amounts[-1])
+                    quantity = int(round(total_price / unit_price)) if unit_price > 0 else 1
+                    quantity = max(quantity, 1)
+                    product_name = self._clean_product_name(' '.join(pending_name_parts))
+                    item = {
+                        'product_name': product_name,
+                        'quantity': quantity,
+                        'unit_price': unit_price,
+                        'total_price': total_price,
+                    }
+                    if self._is_valid_item(**item):
+                        self._append_item_if_new(items, seen, item)
+                pending_name_parts = []
+                pending_qty = None
+                pending_unit_price = None
+
         return items
+
+    def _find_item_table_start(self, lines: List[str]) -> int:
+        """Find the first line likely to be the beginning of the item table."""
+        for index, line in enumerate(lines):
+            line_lower = line.lower()
+            if (
+                ('qty' in line_lower or 'quantity' in line_lower)
+                and ('description' in line_lower or 'item' in line_lower or 'particular' in line_lower)
+                and ('amount' in line_lower or 'price' in line_lower or 'rate' in line_lower or 'value' in line_lower)
+            ):
+                return index + 1
+        return 0
+
+    def _is_table_end_line(self, line: str) -> bool:
+        """Detect footer lines that usually appear after item rows."""
+        line_lower = line.lower()
+        end_keywords = [
+            'subtotal', 'grand total', 'total', 'sales tax', 'tax',
+            'terms', 'thank you', 'payment', 'balance due', 'for any inquiries'
+        ]
+        return any(keyword in line_lower for keyword in end_keywords)
+
+    def _is_noise_line(self, line: str) -> bool:
+        """Filter out non-item lines commonly found in headers and addresses."""
+        line_lower = line.lower()
+
+        noise_keywords = [
+            'receipt', 'invoice', 'sold to', 'ship to', 'receipt #', 'p.o.#',
+            'due date', 'invoice date', 'invoice number', 'date', 'logo',
+            'phone', 'email', 'website', 'contact us', 'address', 'terms',
+            'item description quantity unit price amount'
+        ]
+        if any(keyword in line_lower for keyword in noise_keywords):
+            return True
+
+        # Drop lines that look like addresses or IDs and not item rows
+        if re.search(r'\b\d{5}\b', line) and not re.search(r'\d+\.\d{1,2}', line):
+            return True
+
+        # Item rows should contain alphabetic product text and at least one amount-like value.
+        if not re.search(r'[A-Za-z]', line) and not re.search(r'\d+\.\d{1,2}', line):
+            return True
+
+        return False
+
+    def _normalize_line(self, line: str) -> str:
+        """Normalize OCR artifacts while preserving item semantics."""
+        normalized = re.sub(r'\s+', ' ', (line or '').strip())
+        normalized = normalized.replace('₹', '$')
+        normalized = re.sub(r'\$\s+', '$', normalized)
+        normalized = re.sub(r'(?<=\d),(?=\d{2}\b)', '.', normalized)
+        return normalized
+
+    def _to_amount(self, value: str) -> float:
+        """Convert OCR numeric token into float amount."""
+        cleaned = (value or '').replace('$', '').replace(',', '.').strip()
+        return float(cleaned)
+
+    def _extract_amount_tokens(self, line: str) -> List[str]:
+        """Extract numeric amount-like tokens from a line."""
+        return re.findall(r'\d+(?:[\.,]\d{1,2})?', line)
+
+    def _parse_complete_item_line(self, line: str) -> Optional[Dict]:
+        """Parse one-line item formats where all values exist in the same line."""
+        retail_item = self._parse_tabular_retail_row(line)
+        if retail_item:
+            return retail_item
+
+        match = self.item_row_pattern.match(line)
+        if match:
+            item = {
+                'product_name': self._clean_product_name(match.group(2)),
+                'quantity': int(match.group(1)),
+                'unit_price': self._to_amount(match.group(3)),
+                'total_price': self._to_amount(match.group(4)),
+            }
+            return item if self._is_valid_item(**item) else None
+
+        match = self.item_row_name_first_pattern.match(line)
+        if match:
+            item = {
+                'product_name': self._clean_product_name(match.group(1)),
+                'quantity': int(match.group(2)),
+                'unit_price': self._to_amount(match.group(3)),
+                'total_price': self._to_amount(match.group(4)),
+            }
+            return item if self._is_valid_item(**item) else None
+
+        match = self.item_row_single_amount_pattern.match(line)
+        if match:
+            quantity = int(match.group(1))
+            total_price = self._to_amount(match.group(3))
+            unit_price = total_price / quantity if quantity > 0 else total_price
+            item = {
+                'product_name': self._clean_product_name(match.group(2)),
+                'quantity': quantity,
+                'unit_price': unit_price,
+                'total_price': total_price,
+            }
+            return item if self._is_valid_item(**item) else None
+
+        match = self.inline_name_with_prices_pattern.match(line)
+        if match:
+            product_name = self._clean_product_name(match.group(1))
+            unit_price = self._to_amount(match.group(2))
+            total_price = self._to_amount(match.group(3))
+            quantity = int(round(total_price / unit_price)) if unit_price > 0 else 1
+            quantity = max(quantity, 1)
+            item = {
+                'product_name': product_name,
+                'quantity': quantity,
+                'unit_price': unit_price,
+                'total_price': total_price,
+            }
+            return item if self._is_valid_item(**item) else None
+
+        return None
+
+    def _parse_tabular_retail_row(self, line: str) -> Optional[Dict]:
+        """Parse common Indian retail rows like '11 ITEM NAME 1 95.00 95.00'."""
+        match = self.retail_row_with_mrp_pattern.match(line)
+        if match:
+            product_name = self._clean_product_name(match.group(2))
+            quantity = int(match.group(3))
+            mrp = self._to_amount(match.group(4))
+            rate = self._to_amount(match.group(5))
+            total = self._to_amount(match.group(6))
+            unit_price = rate if rate > 0 else mrp
+
+            item = {
+                'product_name': product_name,
+                'quantity': quantity,
+                'unit_price': unit_price,
+                'total_price': total,
+            }
+            return item if self._is_valid_item(**item) else None
+
+        match = self.retail_row_pattern.match(line)
+        if match:
+            product_name = self._clean_product_name(match.group(2))
+            quantity = int(match.group(3))
+            unit_price = self._to_amount(match.group(4))
+            total = self._to_amount(match.group(5))
+            item = {
+                'product_name': product_name,
+                'quantity': quantity,
+                'unit_price': unit_price,
+                'total_price': total,
+            }
+            return item if self._is_valid_item(**item) else None
+
+        match = self.retail_row_no_sr_pattern.match(line)
+        if match:
+            product_name = self._clean_product_name(match.group(1))
+            quantity = int(match.group(2))
+            unit_price = self._to_amount(match.group(3))
+            total = self._to_amount(match.group(4))
+            item = {
+                'product_name': product_name,
+                'quantity': quantity,
+                'unit_price': unit_price,
+                'total_price': total,
+            }
+            return item if self._is_valid_item(**item) else None
+
+        return None
+
+    def _looks_like_product_text(self, line: str) -> bool:
+        """Detect candidate product name/description lines."""
+        line_lower = line.lower()
+        if any(k in line_lower for k in ['subtotal', 'total', 'tax', 'invoice', 'receipt']):
+            return False
+        if re.search(r'\d+\.\d{1,2}', line):
+            return False
+        return bool(re.search(r'[A-Za-z]', line)) and len(line) >= 3
+
+    def _looks_like_price_line_without_qty(self, line: str) -> bool:
+        """Detect lines that contain two amounts but may miss explicit quantity token."""
+        amounts = re.findall(r'\d+(?:\.\d{1,2})', line)
+        if len(amounts) < 2:
+            return False
+        return not bool(re.search(r'[A-Za-z]{3,}', line))
+
+    def _append_item_if_new(self, items: List[Dict], seen: set, item: Dict):
+        """Append item only when it's not a duplicate OCR artifact."""
+        key = (item['product_name'].lower(), item['quantity'], round(item['total_price'], 2))
+        if key not in seen:
+            seen.add(key)
+            items.append(item)
+
+    def _clean_product_name(self, product_name: str) -> str:
+        """Normalize OCR product text into a clean inventory item name."""
+        cleaned = re.sub(r'\s+', ' ', (product_name or '').strip())
+        cleaned = re.sub(r'^[\-:;,]+', '', cleaned).strip()
+        cleaned = re.sub(r'^\d{1,3}\s+', '', cleaned)
+        cleaned = cleaned.replace('•', ' ')
+        cleaned = re.sub(r'\b(qty|amount|price|unit)\b', '', cleaned, flags=re.IGNORECASE)
+        cleaned = cleaned.replace('¢', '').replace('`', '').replace('|', ' ')
+        cleaned = re.sub(r'[^A-Za-z0-9\s\-./()]+', ' ', cleaned)
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        return cleaned
+
+    def _is_valid_item(self, product_name: str, quantity: int, unit_price: float, total_price: float) -> bool:
+        """Validate parsed item values before storing them."""
+        if not product_name or len(product_name) < 2:
+            return False
+        # Prevent malformed OCR rows like "2 30.00 60.00" from using numeric token as name.
+        if not re.search(r'[A-Za-z]', product_name):
+            return False
+        # Drop header-like rows that OCR mixes into table data.
+        blocked_keywords = {'particulars', 'amount', 'value', 'qty', 'rate', 'total'}
+        if product_name.strip().lower() in blocked_keywords:
+            return False
+        if quantity <= 0:
+            return False
+        if quantity > 250:
+            return False
+        if unit_price <= 0 or total_price <= 0:
+            return False
+        if len(product_name) > 120:
+            return False
+        return True
     
     def _extract_total(self, text: str, items: List[Dict]) -> float:
         """

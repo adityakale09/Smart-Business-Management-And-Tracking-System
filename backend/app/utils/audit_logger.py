@@ -1,12 +1,17 @@
 """
-Audit logging utility for tracking user actions
+Audit logging utility for tracking user actions and failures
 """
 
+import logging
 from sqlalchemy.orm import Session
 from typing import Optional, Dict, Any
 from fastapi import Request
+import traceback
 
 from app.models.audit import AuditLog
+
+# Set up audit logger
+audit_logger = logging.getLogger("audit")
 
 
 def log_audit(
@@ -62,37 +67,176 @@ def log_audit(
         db.add(audit_log)
         db.commit()
         
+        # Log to audit logger for file-based audit trail
+        log_level = logging.WARNING if status == "failure" else logging.INFO
+        audit_logger.log(
+            log_level,
+            f"[{status.upper()}] {action} {entity_type} (ID: {entity_id}) by {username} (User: {user_id})",
+            extra={"ip": ip_address, "error": error_message}
+        )
+        
     except Exception as e:
-        # Don't fail the main operation if audit logging fails
-        print(f"[WARNING] Audit logging failed: {e}")
-        db.rollback()
+        # Log the audit logging failure but don't raise
+        audit_logger.error(f"Audit logging failed for {action} {entity_type}: {str(e)}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
 
 
-def log_login(db: Session, user_id: int, username: str, request: Optional[Request] = None, status: str = "success", error_message: Optional[str] = None):
-    """Log user login attempt"""
-    log_audit(db, "LOGIN", "User", user_id, username, user_id, None, request, status, error_message)
+def log_login(
+    db: Session,
+    user_id: Optional[int] = None,
+    username: Optional[str] = None,
+    request: Optional[Request] = None,
+    status: str = "success",
+    error_message: Optional[str] = None
+):
+    """Log user login attempt (success or failure)"""
+    log_audit(
+        db, "LOGIN", "User",
+        user_id=user_id,
+        username=username,
+        entity_id=user_id,
+        request=request,
+        status=status,
+        error_message=error_message
+    )
 
 
-def log_logout(db: Session, user_id: int, username: str, request: Optional[Request] = None):
-    """Log user logout"""
-    log_audit(db, "LOGOUT", "User", user_id, username, user_id, None, request)
+def log_create(
+    db: Session,
+    entity_type: str,
+    entity_id: int,
+    user_id: Optional[int] = None,
+    username: Optional[str] = None,
+    details: Optional[Dict] = None,
+    request: Optional[Request] = None,
+    status: str = "success",
+    error_message: Optional[str] = None
+):
+    """Log entity creation (success or failure)"""
+    log_audit(
+        db, "CREATE", entity_type,
+        user_id=user_id,
+        username=username,
+        entity_id=entity_id,
+        details=details,
+        request=request,
+        status=status,
+        error_message=error_message
+    )
 
 
-def log_create(db: Session, entity_type: str, entity_id: int, user_id: Optional[int] = None, username: Optional[str] = None, details: Optional[Dict] = None, request: Optional[Request] = None):
-    """Log entity creation"""
-    log_audit(db, "CREATE", entity_type, user_id, username, entity_id, details, request)
+def log_update(
+    db: Session,
+    entity_type: str,
+    entity_id: int,
+    user_id: Optional[int] = None,
+    username: Optional[str] = None,
+    details: Optional[Dict] = None,
+    request: Optional[Request] = None,
+    status: str = "success",
+    error_message: Optional[str] = None
+):
+    """Log entity update (success or failure)"""
+    log_audit(
+        db, "UPDATE", entity_type,
+        user_id=user_id,
+        username=username,
+        entity_id=entity_id,
+        details=details,
+        request=request,
+        status=status,
+        error_message=error_message
+    )
 
 
-def log_update(db: Session, entity_type: str, entity_id: int, user_id: Optional[int] = None, username: Optional[str] = None, details: Optional[Dict] = None, request: Optional[Request] = None):
-    """Log entity update"""
-    log_audit(db, "UPDATE", entity_type, user_id, username, entity_id, details, request)
+def log_delete(
+    db: Session,
+    entity_type: str,
+    entity_id: int,
+    user_id: Optional[int] = None,
+    username: Optional[str] = None,
+    details: Optional[Dict] = None,
+    request: Optional[Request] = None,
+    status: str = "success",
+    error_message: Optional[str] = None
+):
+    """Log entity deletion (success or failure)"""
+    log_audit(
+        db, "DELETE", entity_type,
+        user_id=user_id,
+        username=username,
+        entity_id=entity_id,
+        details=details,
+        request=request,
+        status=status,
+        error_message=error_message
+    )
 
 
-def log_delete(db: Session, entity_type: str, entity_id: int, user_id: Optional[int] = None, username: Optional[str] = None, details: Optional[Dict] = None, request: Optional[Request] = None):
-    """Log entity deletion"""
-    log_audit(db, "DELETE", entity_type, user_id, username, entity_id, details, request)
+def log_password_change(
+    db: Session,
+    user_id: int,
+    username: str,
+    request: Optional[Request] = None,
+    status: str = "success",
+    error_message: Optional[str] = None
+):
+    """Log password change (success or failure)"""
+    log_audit(
+        db, "PASSWORD_CHANGE", "User",
+        user_id=user_id,
+        username=username,
+        entity_id=user_id,
+        request=request,
+        status=status,
+        error_message=error_message
+    )
 
 
-def log_password_change(db: Session, user_id: int, username: str, request: Optional[Request] = None):
-    """Log password change"""
-    log_audit(db, "PASSWORD_CHANGE", "User", user_id, username, user_id, None, request)
+def log_permission_denied(
+    db: Session,
+    user_id: int,
+    username: str,
+    action: str,
+    entity_type: str,
+    request: Optional[Request] = None,
+    reason: str = "Insufficient permissions"
+):
+    """Log permission denied events"""
+    log_audit(
+        db, action, entity_type,
+        user_id=user_id,
+        username=username,
+        request=request,
+        status="failure",
+        error_message=reason
+    )
+
+
+def log_exception(
+    db: Session,
+    action: str,
+    entity_type: str,
+    user_id: Optional[int] = None,
+    username: Optional[str] = None,
+    entity_id: Optional[int] = None,
+    request: Optional[Request] = None,
+    exception: Optional[Exception] = None,
+    details: Optional[Dict] = None
+):
+    """Log an exception/error during an operation"""
+    error_msg = str(exception) if exception else "Unknown error"
+    
+    log_audit(
+        db, action, entity_type,
+        user_id=user_id,
+        username=username,
+        entity_id=entity_id,
+        details=details,
+        request=request,
+        status="failure",
+        error_message=error_msg
+    )

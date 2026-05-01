@@ -11,6 +11,7 @@ class EmployeeCreate(BaseModel):
     """Create employee schema"""
     employee_id: str
     user_id: int
+    full_name: Optional[str] = None
     department: Optional[str] = None
     position: Optional[str] = None
     salary: Optional[float] = None
@@ -22,6 +23,7 @@ class EmployeeCreate(BaseModel):
 
 class EmployeeUpdate(BaseModel):
     """Update employee schema"""
+    full_name: Optional[str] = None
     department: Optional[str] = None
     position: Optional[str] = None
     salary: Optional[float] = None
@@ -35,15 +37,16 @@ class EmployeeResponse(BaseModel):
     """Employee response schema"""
     id: int
     employee_id: str
-    user_id: int
+    user_id: Optional[int] = None
+    full_name: Optional[str]
     department: Optional[str]
     position: Optional[str]
     salary: Optional[float]
     hire_date: Optional[datetime]
-    status: str
+    status: Optional[str] = "active"
     phone: Optional[str]
     address: Optional[str]
-    created_at: datetime
+    created_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True

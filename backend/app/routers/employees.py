@@ -2,7 +2,7 @@
 Employee management routes
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
@@ -15,6 +15,10 @@ from app.schemas.employee import (
     AttendanceCreate, AttendanceResponse
 )
 from app.models.employee import Employee, EmployeeAttendance
+from app.services.employee_service import (
+    create_employee_with_audit,
+    update_employee_with_audit
+)
 
 router = APIRouter()
 
@@ -22,93 +26,63 @@ router = APIRouter()
 @router.post("/", response_model=EmployeeResponse, status_code=status.HTTP_201_CREATED)
 async def create_employee(
     employee_data: EmployeeCreate,
+    request: Request,
     current_user: dict = Depends(require_min_role("manager")),
     db: Session = Depends(get_db)
 ):
     """Create a new employee record"""
-    try:
-        # Check if user exists
-        from app.models.user import User
-        user = db.query(User).filter(User.id == employee_data.user_id).first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"User with ID {employee_data.user_id} does not exist"
-            )
-        
-        # Check if employee ID already exists
-        existing = db.query(Employee).filter(
-            Employee.employee_id == employee_data.employee_id
-        ).first()
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Employee ID already exists"
-            )
-        
-        # Check if user already has an employee record
-        existing_employee = db.query(Employee).filter(
-            Employee.user_id == employee_data.user_id
-        ).first()
-        if existing_employee:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"User with ID {employee_data.user_id} already has an employee record"
-            )
-        
-        new_employee = Employee(
-            employee_id=employee_data.employee_id,
-            user_id=employee_data.user_id,
-            department=employee_data.department,
-            position=employee_data.position,
-            salary=employee_data.salary,
-            hire_date=employee_data.hire_date,
-            phone=employee_data.phone,
-            address=employee_data.address,
-            emergency_contact=employee_data.emergency_contact
-        )
-        
-        db.add(new_employee)
-        db.commit()
-        db.refresh(new_employee)
-        
-        return new_employee
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.rollback()
-        error_msg = str(e)
-        if "connection" in error_msg.lower() or "database" in error_msg.lower():
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Database connection error. Please check your database configuration."
-            )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create employee: {error_msg}"
-        )
+    return create_employee_with_audit(db, employee_data, current_user, request)
 
 
-@router.get("/", response_model=List[EmployeeResponse])
+from fastapi import Query
+from sqlalchemy import or_
+
+@router.get("/", response_model=dict)
 async def get_employees(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    search: Optional[str] = Query(None),
     department: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None),
     current_user: dict = Depends(require_min_role("manager")),
     db: Session = Depends(get_db)
 ):
-    """Get all employees"""
-    query = db.query(Employee)
-    
-    if department:
-        query = query.filter(Employee.department == department)
-    
-    if status_filter:
-        query = query.filter(Employee.status == status_filter)
-    
-    employees = query.offset(skip).limit(limit).all()
-    return employees
+    """Get all employees with pagination and search"""
+    try:
+        query = db.query(Employee)
+        if department:
+            query = query.filter(Employee.department == department)
+        if status_filter:
+            query = query.filter(Employee.status == status_filter)
+        if search:
+            search_term = f"%{search.strip()}%"
+            query = query.filter(
+                or_(
+                    Employee.employee_id.ilike(search_term),
+                    Employee.department.ilike(search_term),
+                    Employee.position.ilike(search_term)
+                )
+            )
+
+        total = query.count()
+        employees = query.offset((page - 1) * page_size).limit(page_size).all()
+
+        items = [
+            EmployeeResponse.model_validate(emp).model_dump(mode="json")
+            for emp in employees
+        ]
+
+        return {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve employees: {str(e)}"
+        )
 
 
 @router.get("/{employee_id}", response_model=EmployeeResponse)
@@ -144,27 +118,12 @@ async def get_employee(
 async def update_employee(
     employee_id: int,
     employee_data: EmployeeUpdate,
+    request: Request,
     current_user: dict = Depends(require_min_role("manager")),
     db: Session = Depends(get_db)
 ):
     """Update an employee record"""
-    employee = db.query(Employee).filter(Employee.id == employee_id).first()
-    
-    if not employee:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Employee not found"
-        )
-    
-    # Update fields
-    update_data = employee_data.dict(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(employee, field, value)
-    
-    db.commit()
-    db.refresh(employee)
-    
-    return employee
+    return update_employee_with_audit(db, employee_id, employee_data, current_user, request)
 
 
 @router.post("/attendance", response_model=AttendanceResponse, status_code=status.HTTP_201_CREATED)

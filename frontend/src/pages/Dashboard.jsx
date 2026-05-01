@@ -1,30 +1,36 @@
 import { useQuery } from '@tanstack/react-query'
 import { analyticsAPI } from '../api/analytics'
-import { aiAPI } from '../api/ai'
-import { TrendingUp, Package, Users, IndianRupee, AlertTriangle } from 'lucide-react'
+import { TrendingUp, Package, Users, IndianRupee } from 'lucide-react'
 import './Dashboard.css'
 
 const Dashboard = () => {
-  const { data: dashboardData, isLoading } = useQuery({
+  const { data: dashboardData, isLoading, error } = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => analyticsAPI.getDashboard(),
-  })
-
-  const { data: taskSuggestions } = useQuery({
-    queryKey: ['task-suggestions'],
-    queryFn: () => aiAPI.getTaskSuggestions(),
-    enabled: false, // Disabled - AI automation module not available
-    retry: false,
   })
 
   if (isLoading) {
     return <div className="dashboard-loading">Loading dashboard...</div>
   }
 
-  const stats = dashboardData || {
+  const fallbackStats = {
     sales: { total_revenue: 0, total_sales: 0 },
     inventory: { total_products: 0, low_stock_items: 0 },
     employees: { total_active: 0 },
+  }
+
+  const stats = {
+    sales: {
+      total_revenue: Number(dashboardData?.sales?.total_revenue ?? fallbackStats.sales.total_revenue),
+      total_sales: Number(dashboardData?.sales?.total_sales ?? fallbackStats.sales.total_sales),
+    },
+    inventory: {
+      total_products: Number(dashboardData?.inventory?.total_products ?? fallbackStats.inventory.total_products),
+      low_stock_items: Number(dashboardData?.inventory?.low_stock_items ?? fallbackStats.inventory.low_stock_items),
+    },
+    employees: {
+      total_active: Number(dashboardData?.employees?.total_active ?? fallbackStats.employees.total_active),
+    },
   }
 
   const statCards = [
@@ -62,7 +68,8 @@ const Dashboard = () => {
     <div className="dashboard">
       <div className="dashboard-header">
         <h1>Dashboard</h1>
-        <p>Welcome back! Here's what's happening with your business.</p>
+        <p>Welcome back!</p>
+        {error && <p style={{ color: '#1582cb', marginTop: '8px' }}>Could not refresh live dashboard data.</p>}
       </div>
 
       <div className="stats-grid">
@@ -83,35 +90,10 @@ const Dashboard = () => {
         })}
       </div>
 
-      {taskSuggestions && taskSuggestions.count > 0 && (
-        <div className="suggestions-section">
-          <div className="section-header">
-            <AlertTriangle size={20} color="#f59e0b" />
-            <h2>AI Suggestions</h2>
-          </div>
-          <div className="suggestions-list">
-            {taskSuggestions.suggestions.map((suggestion, index) => (
-              <div key={index} className="suggestion-card">
-                <span className="suggestion-priority">{suggestion.priority}</span>
-                <div>
-                  <h4>{suggestion.title}</h4>
-                  <p>{suggestion.description}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
 
 export default Dashboard
-
-
-
-
-
-
 
 

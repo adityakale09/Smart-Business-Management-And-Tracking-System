@@ -4,6 +4,26 @@
  */
 export const getErrorMessage = (error) => {
   if (!error) return 'An unknown error occurred'
+
+  if (error.userMessage) {
+    return error.userMessage
+  }
+
+  if (error.code === 'OFFLINE') {
+    return 'You are offline. Reconnect to the internet and retry.'
+  }
+
+  if (error.code === 'ECONNABORTED') {
+    return 'Request timed out. Please check your internet and try again.'
+  }
+
+  if (error.code === 'ERR_NETWORK') {
+    return 'Network error. Please verify your internet connection and retry.'
+  }
+
+  if (error.code === 'ERR_CANCELED') {
+    return 'Request cancelled. You can retry once your connection is stable.'
+  }
   
   // Check if it's an axios error with response
   if (error.response?.data) {

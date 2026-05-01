@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { inventoryAPI } from '../api/inventory'
 import { Package, AlertTriangle, Search, X, Edit2, Trash2, Download } from 'lucide-react'
 import { getErrorMessage } from '../utils/errorHandler'
+import { downloadBlob } from '../utils/fileDownload'
+import { isBlank, parseNonNegativeFloat, parseNonNegativeInt } from '../utils/validation'
 import './Inventory.css'
 
 const Inventory = () => {
@@ -27,13 +29,19 @@ const Inventory = () => {
   })
   const queryClient = useQueryClient()
 
-  const { data: inventory, isLoading, error: inventoryError } = useQuery({
-    queryKey: ['inventory', { low_stock: lowStockFilter }],
-    queryFn: () => inventoryAPI.getAll({ low_stock: lowStockFilter }),
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const { data, isLoading, error: inventoryError } = useQuery({
+    queryKey: ['inventory', { low_stock: lowStockFilter, page, page_size: pageSize, search: searchTerm }],
+    queryFn: () => inventoryAPI.getAll({ low_stock: lowStockFilter, page, page_size: pageSize, search: searchTerm }),
     onError: (error) => {
       console.error('Error loading inventory:', error)
     },
+    keepPreviousData: true,
   })
+
+  const inventory = data?.items || []
+  const total = data?.total || 0
 
   const createProductMutation = useMutation({
     mutationFn: async (productData) => {
@@ -85,8 +93,16 @@ const Inventory = () => {
   })
 
   const deleteProductMutation = useMutation({
-    mutationFn: async (id) => {
-      await inventoryAPI.delete(id)
+    mutationFn: async (item) => {
+      try {
+        await inventoryAPI.delete(item)
+      } catch (error) {
+        // If already deleted (404), treat as success
+        if (error?.response?.status === 404) {
+          return;
+        }
+        throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries(['inventory'])
@@ -94,7 +110,15 @@ const Inventory = () => {
     },
     onError: (error) => {
       console.error('Error deleting product:', error)
-      alert(`Error deleting product: ${error.message}`)
+      // Handle network/empty response errors gracefully
+      if (error?.response?.status === 404) {
+        queryClient.invalidateQueries(['inventory'])
+        alert('Product already deleted.')
+        return;
+      }
+      const serverDetail = error?.response?.data?.detail
+      const detailText = typeof serverDetail === 'string' ? serverDetail : getErrorMessage(error)
+      alert(`Error deleting product: ${detailText || error.message}`)
     }
   })
 
@@ -135,36 +159,36 @@ const Inventory = () => {
     e.preventDefault()
     
     // Validate required fields
-    if (!formData.sku || !formData.sku.trim()) {
+    if (isBlank(formData.sku)) {
       alert('Please enter a SKU')
       return
     }
     
-    if (!formData.name || !formData.name.trim()) {
+    if (isBlank(formData.name)) {
       alert('Please enter a product name')
       return
     }
     
-    if (!formData.unit_price || formData.unit_price === '') {
+    if (isBlank(formData.unit_price)) {
       alert('Please enter a unit price')
       return
     }
     
-    const unitPrice = parseFloat(formData.unit_price)
-    if (isNaN(unitPrice) || unitPrice < 0) {
+    const unitPrice = parseNonNegativeFloat(formData.unit_price)
+    if (unitPrice === null) {
       alert('Please enter a valid unit price')
       return
     }
     
     // Parse quantity and reorder_level, ensuring they're valid numbers
-    const quantity = formData.quantity !== '' ? parseInt(formData.quantity) : 0
-    if (isNaN(quantity) || quantity < 0) {
+    const quantity = parseNonNegativeInt(formData.quantity, 0)
+    if (quantity === null) {
       alert('Please enter a valid quantity (0 or greater)')
       return
     }
     
-    const reorderLevel = formData.reorder_level !== '' ? parseInt(formData.reorder_level) : 10
-    if (isNaN(reorderLevel) || reorderLevel < 0) {
+    const reorderLevel = parseNonNegativeInt(formData.reorder_level, 10)
+    if (reorderLevel === null) {
       alert('Please enter a valid reorder level (0 or greater)')
       return
     }
@@ -202,30 +226,30 @@ const Inventory = () => {
     e.preventDefault()
     
     // Similar validation as handleSubmit
-    if (!formData.name || !formData.name.trim()) {
+    if (isBlank(formData.name)) {
       alert('Please enter a product name')
       return
     }
     
-    if (!formData.unit_price || formData.unit_price === '') {
+    if (isBlank(formData.unit_price)) {
       alert('Please enter a unit price')
       return
     }
     
-    const unitPrice = parseFloat(formData.unit_price)
-    if (isNaN(unitPrice) || unitPrice < 0) {
+    const unitPrice = parseNonNegativeFloat(formData.unit_price)
+    if (unitPrice === null) {
       alert('Please enter a valid unit price')
       return
     }
     
-    const quantity = formData.quantity !== '' ? parseInt(formData.quantity) : 0
-    if (isNaN(quantity) || quantity < 0) {
+    const quantity = parseNonNegativeInt(formData.quantity, 0)
+    if (quantity === null) {
       alert('Please enter a valid quantity (0 or greater)')
       return
     }
     
-    const reorderLevel = formData.reorder_level !== '' ? parseInt(formData.reorder_level) : 10
-    if (isNaN(reorderLevel) || reorderLevel < 0) {
+    const reorderLevel = parseNonNegativeInt(formData.reorder_level, 10)
+    if (reorderLevel === null) {
       alert('Please enter a valid reorder level (0 or greater)')
       return
     }
@@ -273,9 +297,9 @@ const Inventory = () => {
     setShowEditModal(true)
   }
 
-  const handleDelete = (id) => {
+  const handleDelete = (item) => {
     if (window.confirm('Are you sure you want to delete this product?')) {
-      deleteProductMutation.mutate(id)
+      deleteProductMutation.mutate(item)
     }
   }
 
@@ -300,24 +324,12 @@ const Inventory = () => {
     })
   }
 
-  const filteredInventory = inventory?.filter((item) => {
-    if (!item || !item.name || !item.sku) return false
-    return item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-           item.sku.toLowerCase().includes(searchTerm.toLowerCase())
-  }) || []
+
 
   const handleExportCSV = async () => {
     try {
       const response = await inventoryAPI.exportCSV()
-      const blob = new Blob([response], { type: 'text/csv' })
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `inventory_${new Date().toISOString().split('T')[0]}.csv`
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
+      downloadBlob(response, 'text/csv', `inventory_${new Date().toISOString().split('T')[0]}.csv`)
     } catch (error) {
       alert(getErrorMessage(error) || 'Failed to export CSV')
     }
@@ -326,15 +338,11 @@ const Inventory = () => {
   const handleExportExcel = async () => {
     try {
       const response = await inventoryAPI.exportExcel()
-      const blob = new Blob([response], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `inventory_${new Date().toISOString().split('T')[0]}.xlsx`
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
+      downloadBlob(
+        response,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        `inventory_${new Date().toISOString().split('T')[0]}.xlsx`
+      )
     } catch (error) {
       alert(getErrorMessage(error) || 'Failed to export Excel')
     }
@@ -392,6 +400,7 @@ const Inventory = () => {
         {isLoading ? (
           <div className="loading">Loading inventory...</div>
         ) : (
+          <>
           <table className="inventory-table">
             <thead>
               <tr>
@@ -406,8 +415,8 @@ const Inventory = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredInventory && filteredInventory.length > 0 ? (
-                filteredInventory.map((item) => (
+              {inventory && inventory.length > 0 ? (
+                inventory.map((item) => (
                   <tr 
                     key={item.id} 
                     className={`${item.quantity <= item.reorder_level ? 'low-stock' : ''} ${item.recently_updated ? 'recently-updated' : ''}`}
@@ -459,7 +468,7 @@ const Inventory = () => {
                         </button>
                         <button 
                           className="btn-sm btn-delete" 
-                          onClick={() => handleDelete(item.id)}
+                          onClick={() => handleDelete(item)}
                           title="Delete"
                         >
                           <Trash2 size={16} />
@@ -477,6 +486,18 @@ const Inventory = () => {
               )}
             </tbody>
           </table>
+
+          <div className="pagination-controls">
+            <button disabled={page === 1} onClick={() => setPage(page - 1)}>Prev</button>
+            <span>Page {page} of {Math.ceil(total / pageSize) || 1}</span>
+            <button disabled={page * pageSize >= total} onClick={() => setPage(page + 1)}>Next</button>
+            <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }}>
+              {[10, 20, 50, 100].map(size => (
+                <option key={size} value={size}>{size} / page</option>
+              ))}
+            </select>
+          </div>
+          </>
         )}
       </div>
 
@@ -491,84 +512,100 @@ const Inventory = () => {
             </div>
             <form onSubmit={handleSubmit} className="modal-form">
               <div className="form-group">
-                <label>SKU *</label>
+                <label htmlFor="sku">SKU *</label>
                 <input
+                  id="sku"
                   type="text"
+                  placeholder="Enter SKU"
                   value={formData.sku}
                   onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
                   required
                 />
               </div>
               <div className="form-group">
-                <label>Product Name *</label>
+                <label htmlFor="name">Product Name *</label>
                 <input
+                  id="name"
                   type="text"
+                  placeholder="Enter product name"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   required
                 />
               </div>
               <div className="form-group">
-                <label>Description</label>
+                <label htmlFor="description">Description</label>
                 <textarea
+                  id="description"
+                  placeholder="Product description (optional)"
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   rows="3"
                 />
               </div>
               <div className="form-group">
-                <label>Category</label>
+                <label htmlFor="category">Category</label>
                 <input
+                  id="category"
                   type="text"
+                  placeholder="Category (optional)"
                   value={formData.category}
                   onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                 />
               </div>
               <div className="form-row">
                 <div className="form-group">
-                  <label>Quantity</label>
+                  <label htmlFor="quantity">Quantity</label>
                   <input
+                    id="quantity"
                     type="number"
                     min="0"
+                    placeholder="0"
                     value={formData.quantity}
                     onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
-                    placeholder="0"
                   />
                 </div>
                 <div className="form-group">
-                  <label>Reorder Level</label>
+                  <label htmlFor="reorder_level">Reorder Level</label>
                   <input
+                    id="reorder_level"
                     type="number"
                     min="0"
+                    placeholder="10"
                     value={formData.reorder_level}
                     onChange={(e) => setFormData({ ...formData, reorder_level: e.target.value })}
-                    placeholder="10"
                   />
                 </div>
               </div>
               <div className="form-group">
-                <label>Unit Price *</label>
+                <label htmlFor="unit_price">Unit Price *</label>
                 <input
+                  id="unit_price"
                   type="number"
                   step="0.01"
                   min="0"
+                  placeholder="Enter unit price"
                   value={formData.unit_price}
                   onChange={(e) => setFormData({ ...formData, unit_price: e.target.value })}
                   required
                 />
               </div>
               <div className="form-group">
-                <label>Supplier</label>
+                <label htmlFor="supplier">Supplier</label>
                 <input
+                  id="supplier"
                   type="text"
+                  placeholder="Supplier (optional)"
                   value={formData.supplier}
                   onChange={(e) => setFormData({ ...formData, supplier: e.target.value })}
                 />
               </div>
               <div className="form-group">
-                <label>Location</label>
+                <label htmlFor="location">Location</label>
                 <input
+                  id="location"
                   type="text"
+                  placeholder="Location (optional)"
                   value={formData.location}
                   onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                 />
@@ -771,7 +808,3 @@ const Inventory = () => {
 }
 
 export default Inventory
-
-
-
-

@@ -4,11 +4,12 @@ OCR Service for extracting text from images and PDFs
 
 import pytesseract
 from pdf2image import convert_from_path
-from PIL import Image
+from PIL import Image, ImageFilter, ImageOps
 import io
 from typing import Optional
 import os
 import warnings
+import re
 
 
 class OCRService:
@@ -54,6 +55,49 @@ class OCRService:
                 "Windows: Download and install tesseract-ocr-w64-setup-5.x.x.exe\n"
                 "After installation, restart the backend server."
             )
+
+    def _prepare_image_variants(self, image: Image.Image):
+        """Build a few preprocessed variants and let OCR choose the best output."""
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+
+        # Scale up smaller receipts so table text becomes easier to read.
+        width, height = image.size
+        if width < 1600:
+            scale = 2
+            image = image.resize((width * scale, height * scale), Image.Resampling.LANCZOS)
+
+        grayscale = ImageOps.grayscale(image)
+        autocontrast = ImageOps.autocontrast(grayscale)
+        sharpened = autocontrast.filter(ImageFilter.SHARPEN)
+        thresholded = sharpened.point(lambda p: 255 if p > 160 else 0)
+        thresholded_soft = sharpened.point(lambda p: 255 if p > 145 else 0)
+
+        return [image, autocontrast, thresholded_soft, thresholded]
+
+    def _score_receipt_text(self, text: str) -> int:
+        """Score OCR output quality for tabular receipts."""
+        if not text:
+            return 0
+
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        score = 0
+
+        for line in lines:
+            if re.search(r'^\d+\s+.+\s+\d+\.\d{1,2}\s+\d+\.\d{1,2}$', line):
+                score += 10
+            elif re.search(r'^\d+\s+.+\s+\d+\.\d{1,2}$', line):
+                score += 6
+
+            if re.search(r'\b(qty|description|unit price|amount|subtotal|total)\b', line, re.IGNORECASE):
+                score += 3
+
+            if re.search(r'\d+\.\d{1,2}', line):
+                score += 1
+
+        # Prefer outputs that include enough lines to parse rows.
+        score += min(len(lines), 20)
+        return score
     
     def extract_text_from_image(self, image: Image.Image) -> str:
         """
@@ -68,13 +112,25 @@ class OCRService:
         self._check_tesseract()
         
         try:
-            # Convert image to RGB if necessary
-            if image.mode != 'RGB':
-                image = image.convert('RGB')
-            
-            # Use Tesseract OCR
-            text = pytesseract.image_to_string(image, lang='eng')
-            return text.strip()
+            variants = self._prepare_image_variants(image)
+            configs = [
+                '--oem 3 --psm 6 -c preserve_interword_spaces=1',
+                '--oem 3 --psm 4 -c preserve_interword_spaces=1',
+                '--oem 3 --psm 11 -c preserve_interword_spaces=1',
+            ]
+
+            best_text = ""
+            best_score = -1
+
+            for variant in variants:
+                for config in configs:
+                    text = pytesseract.image_to_string(variant, lang='eng', config=config)
+                    score = self._score_receipt_text(text)
+                    if score > best_score:
+                        best_score = score
+                        best_text = text
+
+            return best_text.strip()
         except Exception as e:
             if "tesseract" in str(e).lower():
                 raise Exception(

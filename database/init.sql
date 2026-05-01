@@ -73,11 +73,3 @@
 
 -- Note: All tables are created automatically by SQLAlchemy when the application starts
 -- Run: python backend/main.py to initialize the database
-
-
-
-
-
-
-
-

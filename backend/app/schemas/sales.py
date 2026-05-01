@@ -92,7 +92,7 @@ class SaleResponse(BaseModel):
     id: int
     transaction_id: str
     customer_name: str
-    product_id: int
+    product_id: Optional[int] = None
     quantity: int
     unit_price: float
     total_amount: float

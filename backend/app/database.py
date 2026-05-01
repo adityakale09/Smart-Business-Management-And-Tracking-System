@@ -104,19 +104,7 @@ async def init_db():
         # Don't raise error for MongoDB, as it might not be critical for all features
         print(f"    [WARNING] Continuing without MongoDB...")
     
-    # Create tables in PostgreSQL
-    print("\n[3/3] Creating database tables...")
-    try:
-        from app.models import user, sales, inventory, employee, receipt
-        Base.metadata.create_all(bind=engine)
-        print("  Tables created successfully")
-    except Exception as e:
-        print(f"  [!] Error creating tables: {e}")
-        raise
-    
-    print("\n" + "="*60)
-    print("[+] Database initialization completed successfully!")
-    print("="*60 + "\n")
+    # Table creation removed. Use Alembic for migrations.
 
 
 

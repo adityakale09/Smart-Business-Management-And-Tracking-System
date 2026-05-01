@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PostgreSQL Database
   postgres:
@@ -71,7 +69,7 @@ services:
       - ./backend:/app
     networks:
       - business_network
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
 
   # Frontend
   frontend:
@@ -82,7 +80,7 @@ services:
     environment:
       - VITE_API_URL=http://localhost:8000
     ports:
-      - "5173:5173"
+      - "5173:3000"
     depends_on:
       - backend
     volumes:

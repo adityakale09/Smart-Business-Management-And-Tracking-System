@@ -17,6 +17,7 @@ class Employee(Base):
     user_id = Column(Integer, ForeignKey("users.id"), unique=True)
     department = Column(String)
     position = Column(String)
+    full_name = Column(String)
     salary = Column(Float)
     hire_date = Column(DateTime)
     status = Column(String, default="active")  # active, on_leave, terminated
