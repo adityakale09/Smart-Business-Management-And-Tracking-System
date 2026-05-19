@@ -79,6 +79,81 @@ MONGODB_DB=business_management
 SECRET_KEY=replace-with-a-strong-random-secret
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 
+
+# Smart Business Management and Tracking System
+
+A full-stack platform for managing sales, inventory, employees, receipts (OCR), and business analytics.
+
+---
+
+## Overview
+
+This project includes:
+
+- **Backend:** FastAPI (Python) with JWT authentication, role-based access, modular routers, and reporting.
+- **Frontend:** React + Vite dashboard for all business operations.
+- **Database:** PostgreSQL (primary), with Alembic migrations.
+- **OCR:** Automated receipt processing using Tesseract OCR.
+- **DevOps:** Docker Compose for local development, PowerShell scripts for automation.
+
+---
+
+## Project Structure
+
+```
+Main_pro_ject/
+│
+├── frontend/         # React app (Vite, components, pages, API)
+├── backend/          # FastAPI app (routers, models, services, schemas)
+│   ├── app/
+│   ├── alembic/
+│   └── scripts/
+├── database/         # SQL bootstrap/init scripts
+├── docs/             # API and system documentation
+├── archive/          # Historical docs/scripts
+└── start-servers.ps1 # Script to launch backend & frontend
+```
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- Python 3.9+
+- Node.js 16+
+- PostgreSQL
+- (Optional) MongoDB (if enabled in config)
+- Docker (for containerized setup)
+
+### Backend Setup
+
+```powershell
+cd backend
+python -m venv venv
+.\venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+Create `backend/.env` (see sample in repo):
+
+```env
+DEBUG=True
+HOST=0.0.0.0
+PORT=8000
+
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=your_password
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=business_management
+
+MONGODB_URL=mongodb://localhost:27017
+MONGODB_DB=business_management
+
+SECRET_KEY=replace-with-a-strong-random-secret
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+
 CORS_ORIGINS=["http://localhost:3000","http://localhost:5173"]
 ```
 
@@ -90,7 +165,7 @@ cd backend
 python main.py
 ```
 
-### 3. Frontend Setup
+### Frontend Setup
 
 ```powershell
 cd frontend
@@ -98,7 +173,9 @@ npm install
 npm run dev
 ```
 
-By current Vite config, frontend runs on port `3000`.
+Frontend runs on port `3000` (or `5173` if using Vite default).
+
+---
 
 ## Docker Development
 
@@ -117,11 +194,11 @@ docker-compose down
 docker-compose down -v
 ```
 
-Container URLs:
-
 - Frontend: http://localhost:5173
 - Backend API: http://localhost:8000
 - Swagger UI: http://localhost:8000/docs
+
+---
 
 ## Application URLs
 
@@ -132,6 +209,8 @@ Local (non-Docker):
 - API Docs (Swagger): http://localhost:8000/docs
 - API Docs (ReDoc): http://localhost:8000/redoc
 - Health endpoint: http://localhost:8000/api/health
+
+---
 
 ## Database Migrations (Alembic)
 
@@ -155,6 +234,8 @@ alembic revision --autogenerate -m "describe_change"
 alembic upgrade head
 ```
 
+---
+
 ## Testing and Validation
 
 Backend validation/test scripts are available in `backend/`.
@@ -169,6 +250,8 @@ python test_new_endpoints.py
 python test_audit_system.py
 ```
 
+---
+
 ## Utility Scripts
 
 - Start backend and frontend in separate PowerShell windows: `start-servers.ps1`
@@ -181,6 +264,8 @@ If admin is created through the script, default credentials are:
 
 Change the password immediately after first login.
 
+---
+
 ## Documentation
 
 - Setup and maintenance: [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)
@@ -188,11 +273,15 @@ Change the password immediately after first login.
 - Backend DB setup notes: [backend/DATABASE_SETUP.md](backend/DATABASE_SETUP.md)
 - Archive policy and restore guidance: [archive/README.md](archive/README.md)
 
+---
+
 ## Troubleshooting
 
 - Backend fails to start: verify `backend/.env` values and database availability.
 - Frontend cannot reach API: check backend status and Vite proxy/API URL settings.
 - Docker services unhealthy: inspect `docker-compose logs -f` and restart impacted containers.
+
+---
 
 ## Notes
 

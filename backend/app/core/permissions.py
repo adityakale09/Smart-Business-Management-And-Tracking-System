@@ -57,11 +57,3 @@ def require_min_role(min_role: str):
             )
         return current_user
     return role_checker
-
-
-
-
-
-
-
-

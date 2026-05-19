@@ -172,13 +172,15 @@ const Employees = () => {
   }
 
   useEffect(() => {
-    if (employeesPayload !== undefined) {
+    if (import.meta.env.DEV && employeesPayload !== undefined) {
       console.log('[Employees] Employees list response:', employeesPayload)
     }
   }, [employeesPayload])
 
   useEffect(() => {
-    console.log('[Employees] Employees rows:', employees)
+    if (import.meta.env.DEV) {
+      console.log('[Employees] Employees rows:', employees)
+    }
   }, [employees])
 
   return (

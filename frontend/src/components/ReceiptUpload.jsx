@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { receiptAPI } from '../api/receipt'
 import { getErrorMessage } from '../utils/errorHandler'
 import { fetchLiveExchangeRate, formatCurrencyAmount, SUPPORTED_CURRENCIES } from '../utils/currency'
@@ -408,7 +408,7 @@ const ReceiptUpload = ({ onUploadSuccess }) => {
     finalizeCropSelection()
   }
 
-  const handleEditorWheel = (event) => {
+  const handleEditorWheel = useCallback((event) => {
     if (!isImageFile) {
       return
     }
@@ -425,7 +425,21 @@ const ReceiptUpload = ({ onUploadSuccess }) => {
       x: clamp(prev.x - event.deltaX * 0.5, -500, 500),
       y: clamp(prev.y - event.deltaY * 0.5, -500, 500),
     }))
-  }
+  }, [editorMode, isImageFile])
+
+  useEffect(() => {
+    const node = imageEditorRef.current
+    if (!node) {
+      return undefined
+    }
+
+    const onWheel = (event) => handleEditorWheel(event)
+    node.addEventListener('wheel', onWheel, { passive: false })
+
+    return () => {
+      node.removeEventListener('wheel', onWheel)
+    }
+  }, [handleEditorWheel])
 
   const updateCropSelection = (event) => {
     if (!selectingCrop || !cropStartRef.current || !imageEditorRef.current) {
@@ -742,7 +756,6 @@ const ReceiptUpload = ({ onUploadSuccess }) => {
                   onTouchStart={beginEditorInteraction}
                   onTouchMove={updateEditorInteraction}
                   onTouchEnd={finalizeEditorInteraction}
-                  onWheel={handleEditorWheel}
                 >
                   <img
                     src={preview}

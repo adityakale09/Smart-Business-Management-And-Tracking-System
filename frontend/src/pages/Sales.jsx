@@ -106,13 +106,15 @@ const Sales = () => {
   })
 
   useEffect(() => {
-    if (salesPayload !== undefined) {
+    if (import.meta.env.DEV && salesPayload !== undefined) {
       console.log('[Sales] Sales list response:', salesPayload)
     }
   }, [salesPayload])
 
   useEffect(() => {
-    console.log('[Sales] Sales rows:', sales)
+    if (import.meta.env.DEV) {
+      console.log('[Sales] Sales rows:', sales)
+    }
   }, [sales])
 
   useEffect(() => {
