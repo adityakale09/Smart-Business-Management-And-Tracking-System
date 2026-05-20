@@ -53,9 +53,53 @@ const Sales = () => {
 
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
+  const [dateFilter, setDateFilter] = useState('all')
+  const [customStartDate, setCustomStartDate] = useState('')
+  const [customEndDate, setCustomEndDate] = useState('')
+
+  const getDateParams = () => {
+    const now = new Date()
+    let startDate = null
+    let endDate = null
+
+    switch (dateFilter) {
+      case 'this_week': {
+        const dayOfWeek = now.getDay()
+        const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+        startDate = new Date(now)
+        startDate.setDate(now.getDate() - diffToMonday)
+        startDate.setHours(0, 0, 0, 0)
+        endDate = new Date(now)
+        endDate.setHours(23, 59, 59, 999)
+        break
+      }
+      case 'this_month': {
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1)
+        startDate.setHours(0, 0, 0, 0)
+        endDate = new Date(now)
+        endDate.setHours(23, 59, 59, 999)
+        break
+      }
+      case 'custom': {
+        if (customStartDate) {
+          startDate = new Date(customStartDate + 'T00:00:00')
+        }
+        if (customEndDate) {
+          endDate = new Date(customEndDate + 'T23:59:59')
+        }
+        break
+      }
+    }
+
+    return {
+      start_date: startDate ? startDate.toISOString() : undefined,
+      end_date: endDate ? endDate.toISOString() : undefined,
+    }
+  }
+
   const { data: salesPayload, isLoading, isError, error } = useQuery({
-    queryKey: ['sales', { page, page_size: pageSize, search: searchTerm }],
-    queryFn: () => salesAPI.getAll({ page, page_size: pageSize, search: searchTerm }),
+    queryKey: ['sales', { page, page_size: pageSize, search: searchTerm, dateFilter, customStartDate, customEndDate }],
+    queryFn: () => salesAPI.getAll({ page, page_size: pageSize, search: searchTerm, ...getDateParams() }),
     onError: (err) => {
       console.error('[Sales] Failed to load sales list:', err)
     },
@@ -272,15 +316,63 @@ const Sales = () => {
       )}
 
       <div className="sales-controls">
-        <div className="search-box">
-          <Search size={20} />
-          <input
-            type="text"
-            placeholder="Search by customer or transaction ID..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+        <div className="sales-controls-row">
+          <div className="search-box">
+            <Search size={20} />
+            <input
+              type="text"
+              placeholder="Search by customer or transaction ID..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <div className="date-filter-buttons">
+            <button
+              className={`date-filter-btn ${dateFilter === 'all' ? 'active' : ''}`}
+              onClick={() => { setDateFilter('all'); setCustomStartDate(''); setCustomEndDate(''); setPage(1) }}
+            >
+              All
+            </button>
+            <button
+              className={`date-filter-btn ${dateFilter === 'this_week' ? 'active' : ''}`}
+              onClick={() => { setDateFilter('this_week'); setCustomStartDate(''); setCustomEndDate(''); setPage(1) }}
+            >
+              This Week
+            </button>
+            <button
+              className={`date-filter-btn ${dateFilter === 'this_month' ? 'active' : ''}`}
+              onClick={() => { setDateFilter('this_month'); setCustomStartDate(''); setCustomEndDate(''); setPage(1) }}
+            >
+              This Month
+            </button>
+            <button
+              className={`date-filter-btn ${dateFilter === 'custom' ? 'active' : ''}`}
+              onClick={() => { setDateFilter('custom'); setCustomStartDate(''); setCustomEndDate(''); setPage(1) }}
+            >
+              Custom Range
+            </button>
+          </div>
         </div>
+        {dateFilter === 'custom' && (
+          <div className="custom-date-range">
+            <label>
+              From:
+              <input
+                type="date"
+                value={customStartDate}
+                onChange={(e) => { setCustomStartDate(e.target.value); setPage(1) }}
+              />
+            </label>
+            <label>
+              To:
+              <input
+                type="date"
+                value={customEndDate}
+                onChange={(e) => { setCustomEndDate(e.target.value); setPage(1) }}
+              />
+            </label>
+          </div>
+        )}
       </div>
 
       <div className="sales-table-container">

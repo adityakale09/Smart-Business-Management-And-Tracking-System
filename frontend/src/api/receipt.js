@@ -85,4 +85,19 @@ export const receiptAPI = {
         const response = await apiClient.post('/api/seed-database')
         return response.data
     },
+
+    // Get receipt analytics
+    getAnalytics: async(params = {}) => {
+        const response = await apiClient.get('/api/receipts/analytics', { params })
+        return response.data
+    },
+
+    // Export receipts
+    exportReceipts: async(params = {}) => {
+        const response = await apiClient.get('/api/receipts/export', {
+            params,
+            responseType: params.format === 'json' ? 'json' : 'blob',
+        })
+        return response.data
+    },
 }

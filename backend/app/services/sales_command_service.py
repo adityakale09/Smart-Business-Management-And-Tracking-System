@@ -45,7 +45,7 @@ def create_sale_with_audit(db: Session, sale_data, current_user: dict, request: 
 
 def delete_sale_with_audit(db: Session, sale_id: int, current_user: dict, request: Request) -> dict:
     """Delete sale transaction and write audit entry."""
-    deleted_sale = delete_sale_transaction(db, sale_id)
+    deleted_sale = delete_sale_transaction(db, sale_id, current_user)
 
     log_delete(
         db,

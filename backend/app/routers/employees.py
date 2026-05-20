@@ -8,17 +8,23 @@ from typing import List, Optional
 from datetime import datetime
 
 from app.database import get_db
-from app.core.security import get_current_user
+from app.core.security import verify_password
 from app.core.permissions import require_min_role
+from app.core.tenant import apply_org_filter
+from app.utils.rate_limiter import login_rate_limiter
 from app.schemas.employee import (
     EmployeeCreate, EmployeeUpdate, EmployeeResponse,
     AttendanceCreate, AttendanceResponse
 )
+from app.schemas.auth import UserResponse
 from app.models.employee import Employee, EmployeeAttendance
+from app.models.user import User
 from app.services.employee_service import (
     create_employee_with_audit,
-    update_employee_with_audit
+    update_employee_with_audit,
+    delete_employee_with_audit
 )
+from sqlalchemy import or_
 
 router = APIRouter()
 
@@ -34,22 +40,22 @@ async def create_employee(
     return create_employee_with_audit(db, employee_data, current_user, request)
 
 
-from fastapi import Query
-from sqlalchemy import or_
-
 @router.get("/", response_model=dict)
 async def get_employees(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     search: Optional[str] = Query(None),
     department: Optional[str] = Query(None),
-    status_filter: Optional[str] = Query(None),
+    status_filter: Optional[str] = Query(None, alias="status"),
     current_user: dict = Depends(require_min_role("manager")),
     db: Session = Depends(get_db)
 ):
-    """Get all employees with pagination and search"""
+    """Get all employees with pagination, search, and organization scoping"""
     try:
         query = db.query(Employee)
+        org_id = current_user.get("organization_id")
+        if org_id is not None:
+            query = query.filter(Employee.organization_id == int(org_id))
         if department:
             query = query.filter(Employee.department == department)
         if status_filter:
@@ -59,13 +65,14 @@ async def get_employees(
             query = query.filter(
                 or_(
                     Employee.employee_id.ilike(search_term),
+                    Employee.full_name.ilike(search_term),
                     Employee.department.ilike(search_term),
                     Employee.position.ilike(search_term)
                 )
             )
 
         total = query.count()
-        employees = query.offset((page - 1) * page_size).limit(page_size).all()
+        employees = query.order_by(Employee.employee_id).offset((page - 1) * page_size).limit(page_size).all()
 
         items = [
             EmployeeResponse.model_validate(emp).model_dump(mode="json")
@@ -88,28 +95,21 @@ async def get_employees(
 @router.get("/{employee_id}", response_model=EmployeeResponse)
 async def get_employee(
     employee_id: int,
-    current_user: dict = Depends(require_min_role("employee")),
+    current_user: dict = Depends(require_min_role("manager")),
     db: Session = Depends(get_db)
 ):
-    """Get a specific employee"""
-    employee = db.query(Employee).filter(Employee.id == employee_id).first()
+    """Get a specific employee (scoped to organization)"""
+    org_id = current_user.get("organization_id")
+    query = db.query(Employee).filter(Employee.id == employee_id)
+    if org_id is not None:
+        query = query.filter(Employee.organization_id == int(org_id))
+    employee = query.first()
     
     if not employee:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Employee not found"
         )
-    
-    # Employees can only view their own profile unless they're manager/admin
-    if current_user["role"] == "employee":
-        user_employee = db.query(Employee).filter(
-            Employee.user_id == int(current_user["user_id"])
-        ).first()
-        if not user_employee or user_employee.id != employee_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied"
-            )
     
     return employee
 
@@ -124,6 +124,69 @@ async def update_employee(
 ):
     """Update an employee record"""
     return update_employee_with_audit(db, employee_id, employee_data, current_user, request)
+
+
+@router.delete("/{employee_id}")
+async def delete_employee(
+    employee_id: int,
+    request: Request,
+    current_user: dict = Depends(require_min_role("manager")),
+    db: Session = Depends(get_db)
+):
+    """Delete an employee record"""
+    return delete_employee_with_audit(db, employee_id, current_user, request)
+
+
+@router.post("/verify-password")
+async def verify_employee_edit_password(
+    password_data: dict,
+    request: Request,
+    current_user: dict = Depends(require_min_role("manager")),
+    db: Session = Depends(get_db)
+):
+    """Verify admin/manager password before allowing employee edits
+    
+    Protected by IP-based rate limiting (ISO 27001 A.9.4.2).
+    """
+    try:
+        # Check rate limit for brute-force protection
+        login_rate_limiter.check_rate_limit(request)
+        
+        user_id = int(current_user["user_id"])
+        user = db.query(User).filter(User.id == user_id).first()
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        password = password_data.get("password", "")
+        if not password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Password is required"
+            )
+        
+        is_valid = verify_password(password, user.hashed_password)
+        
+        if not is_valid:
+            # Record failed attempt
+            ip_address = request.client.host if request.client else "unknown"
+            login_rate_limiter.record_failure(ip_address)
+        else:
+            # Reset on success
+            ip_address = request.client.host if request.client else "unknown"
+            login_rate_limiter.reset_ip(ip_address)
+        
+        return {"verified": is_valid}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Password verification failed: {str(e)}"
+        )
 
 
 @router.post("/attendance", response_model=AttendanceResponse, status_code=status.HTTP_201_CREATED)
@@ -154,7 +217,8 @@ async def create_attendance(
         date=attendance_data.date,
         check_in=attendance_data.check_in,
         check_out=attendance_data.check_out,
-        status=attendance_data.status
+        status=attendance_data.status,
+        organization_id=current_user.get("organization_id")
     )
     
     # Calculate hours worked if both check_in and check_out are provided
@@ -187,9 +251,12 @@ async def get_employee_attendance(
                 detail="Access denied"
             )
     
+    org_id = current_user.get("organization_id")
     query = db.query(EmployeeAttendance).filter(
         EmployeeAttendance.employee_id == employee_id
     )
+    if org_id is not None:
+        query = query.filter(EmployeeAttendance.organization_id == int(org_id))
     
     if start_date:
         query = query.filter(EmployeeAttendance.date >= start_date)
@@ -198,11 +265,3 @@ async def get_employee_attendance(
     
     attendance = query.order_by(EmployeeAttendance.date.desc()).all()
     return attendance
-
-
-
-
-
-
-
-

@@ -8,14 +8,16 @@ This module centralizes authentication operations and related side effects
 from fastapi import HTTPException, Request, status
 from sqlalchemy.orm import Session
 from datetime import timedelta
+from typing import Optional
 
 from app.models.user import User, UserRole
 from app.core.security import verify_password, get_password_hash, create_access_token
 from app.core.config import settings
 from app.utils.audit_logger import log_login, log_create, log_update, log_password_change
+from app.utils.rate_limiter import login_rate_limiter
 
 
-def register_with_audit(db: Session, user_data, request: Request):
+def register_with_audit(db: Session, user_data, request: Request, organization_id: Optional[int] = None):
     """Register new user and write audit entry."""
     try:
         # Check if user exists
@@ -30,13 +32,22 @@ def register_with_audit(db: Session, user_data, request: Request):
             )
         
         # Create new user
+        # If no organization_id provided, find or use a default org mechanism
+        # For self-registration, this requires an org context
+        if organization_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Organization ID is required for registration"
+            )
+        
         hashed_password = get_password_hash(user_data.password)
         new_user = User(
             email=user_data.email,
             username=user_data.username,
             hashed_password=hashed_password,
             full_name=user_data.full_name,
-            role=UserRole.EMPLOYEE  # Always assign default role
+            role=UserRole.EMPLOYEE,
+            organization_id=organization_id
         )
         
         db.add(new_user)
@@ -64,11 +75,21 @@ def register_with_audit(db: Session, user_data, request: Request):
 
 
 def login_with_audit(db: Session, credentials, request: Request):
-    """Authenticate user and write audit entry."""
+    """Authenticate user and write audit entry.
+    
+    Implements IP-based rate limiting for brute-force protection (PCI-DSS 8.3.3).
+    """
     try:
+        # Check rate limit first (PCI-DSS 8.3.3, ISO 27001 A.9.4.2)
+        login_rate_limiter.check_rate_limit(request)
+        
         user = db.query(User).filter(User.username == credentials.username).first()
         
         if not user or not verify_password(credentials.password, user.hashed_password):
+            # Record failed attempt for rate limiting
+            ip_address = request.client.host if request.client else "unknown"
+            login_rate_limiter.record_failure(ip_address)
+            
             # Log failed login attempt
             log_login(db, None, credentials.username, request, "failure", "Invalid credentials")
             raise HTTPException(
@@ -77,16 +98,29 @@ def login_with_audit(db: Session, credentials, request: Request):
             )
         
         if not user.is_active:
+            # Record failed attempt for rate limiting
+            ip_address = request.client.host if request.client else "unknown"
+            login_rate_limiter.record_failure(ip_address)
+            
             log_login(db, user.id, user.username, request, "failure", "Account inactive")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="User account is inactive"
             )
         
+        # Reset rate limit counter on successful login
+        ip_address = request.client.host if request.client else "unknown"
+        login_rate_limiter.reset_ip(ip_address)
+        
         # Create access token
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
-            data={"sub": str(user.id), "role": user.role.value},
+            data={
+                "sub": str(user.id),
+                "role": user.role.value,
+                "username": user.username,
+                "organization_id": user.organization_id
+            },
             expires_delta=access_token_expires
         )
         
@@ -97,7 +131,8 @@ def login_with_audit(db: Session, credentials, request: Request):
             "access_token": access_token,
             "token_type": "bearer",
             "user_id": user.id,
-            "role": user.role.value
+            "role": user.role.value,
+            "organization_id": user.organization_id
         }
     except HTTPException:
         raise
@@ -121,7 +156,7 @@ def update_profile_with_audit(db: Session, user_id: int, profile_data, current_u
             )
         
         # Update fields if provided
-        update_data = profile_data.dict(exclude_unset=True)
+        update_data = profile_data.model_dump(exclude_unset=True)
         
         # Check if email is being changed and if it's already taken
         if "email" in update_data and update_data["email"] != user.email:

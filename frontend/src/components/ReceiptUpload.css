@@ -81,9 +81,9 @@
 }
 
 .editor-btn {
-  border: 1px solid #bfcad6;
-  background: #f7fafc;
-  color: #2d3e50;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
   border-radius: 6px;
   font-size: 0.85rem;
   font-weight: 600;
@@ -97,7 +97,7 @@
 }
 
 .editor-btn:hover:not(:disabled) {
-  background: #e9f2fb;
+  background: var(--hover-bg);
 }
 
 .editor-btn.active {
@@ -152,9 +152,9 @@
   display: inline-block;
   width: 100%;
   overflow: hidden;
-  border: 1px solid #cfdbe8;
+  border: 1px solid var(--border-color);
   border-radius: 6px;
-  background: linear-gradient(135deg, #f5f8fb, #eaf1f8);
+  background: var(--bg-tertiary);
   user-select: none;
 }
 
@@ -264,10 +264,10 @@
 .error-message {
   margin-top: 1rem;
   padding: 1rem;
-  background: #fee;
-  border: 1px solid #fcc;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
   border-radius: 4px;
-  color: #c33;
+  color: var(--text-primary);
 }
 
 .currency-panel {
@@ -298,10 +298,10 @@
 .currency-select {
   min-width: 110px;
   padding: 0.45rem 0.6rem;
-  border: 1px solid #b3cced;
+  border: 1px solid var(--border-color);
   border-radius: 4px;
-  background: #fff;
-  color: #20456f;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
 }
 
 .currency-rate {
@@ -383,9 +383,19 @@
   color: #155724;
 }
 
+[data-theme='dark'] .status-badge.success {
+  background: rgba(21, 87, 36, 0.3);
+  color: #6ee7b7;
+}
+
 .status-badge.warning {
   background: #fff3cd;
   color: #856404;
+}
+
+[data-theme='dark'] .status-badge.warning {
+  background: rgba(133, 100, 4, 0.3);
+  color: #fcd34d;
 }
 
 .success-badge {
@@ -458,6 +468,55 @@
   }
 
   .editor-sliders {
+    grid-template-columns: 1fr;
+  }
+
+  .preview-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Preview Split Layout - Original + Editor side by side */
+.preview-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.original-preview {
+  min-width: 0;
+}
+
+.original-preview .preview-header {
+  margin-bottom: 0.65rem;
+}
+
+.original-image-wrapper {
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  max-height: 540px;
+}
+
+.original-receipt-image {
+  max-width: 100%;
+  max-height: 540px;
+  object-fit: contain;
+  display: block;
+}
+
+.editor-section {
+  min-width: 0;
+}
+
+@media (max-width: 1024px) {
+  .preview-split {
     grid-template-columns: 1fr;
   }
 }

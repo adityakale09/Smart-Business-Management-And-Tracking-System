@@ -12,11 +12,15 @@ from app.models.inventory import Inventory
 from app.utils.audit_logger import log_create, log_update, log_exception
 
 
+LOW_STOCK_THRESHOLD = 5
+
+
 def update_item_status(item: Inventory) -> None:
-    """Helper function to automatically update item status based on quantity"""
+    """Helper function to automatically update item status based on quantity.
+    Uses LOW_STOCK_THRESHOLD as the threshold for low stock status."""
     if item.quantity <= 0:
         item.status = "out_of_stock"
-    elif item.quantity <= item.reorder_level:
+    elif item.quantity <= LOW_STOCK_THRESHOLD:
         item.status = "low_stock"
     else:
         item.status = "active"
@@ -42,7 +46,8 @@ def create_inventory_with_audit(db: Session, item_data, current_user: dict, requ
             reorder_level=item_data.reorder_level,
             unit_price=item_data.unit_price,
             supplier=item_data.supplier,
-            location=item_data.location
+            location=item_data.location,
+            organization_id=current_user.get("organization_id")
         )
         
         # Auto-update status based on quantity
@@ -98,7 +103,11 @@ def create_inventory_with_audit(db: Session, item_data, current_user: dict, requ
 def update_inventory_with_audit(db: Session, item_id: int, item_data, current_user: dict, request: Request):
     """Update inventory item and write audit entry."""
     try:
-        item = db.query(Inventory).filter(Inventory.id == item_id).first()
+        org_id = current_user.get("organization_id")
+        query = db.query(Inventory).filter(Inventory.id == item_id)
+        if org_id is not None:
+            query = query.filter(Inventory.organization_id == int(org_id))
+        item = query.first()
         
         if not item:
             raise HTTPException(
@@ -107,7 +116,7 @@ def update_inventory_with_audit(db: Session, item_id: int, item_data, current_us
             )
         
         # Update fields
-        update_data = item_data.dict(exclude_unset=True)
+        update_data = item_data.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             setattr(item, field, value)
         

@@ -14,7 +14,11 @@ from app.models.inventory import Inventory
 
 def create_sale_transaction(db: Session, sale_data, current_user: dict) -> Sale:
     """Create a sale and update related inventory atomically."""
-    product = db.query(Inventory).filter(Inventory.id == sale_data.product_id).first()
+    org_id = current_user.get("organization_id")
+    query = db.query(Inventory).filter(Inventory.id == sale_data.product_id)
+    if org_id is not None:
+        query = query.filter(Inventory.organization_id == int(org_id))
+    product = query.first()
     if not product:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -30,8 +34,6 @@ def create_sale_transaction(db: Session, sale_data, current_user: dict) -> Sale:
     total_amount = sale_data.quantity * sale_data.unit_price
     transaction_id = f"TXN-{uuid.uuid4().hex[:8].upper()}"
 
-    # Debug: print user_id assignment
-    print(f"[DEBUG] Creating sale for user_id={current_user.get('user_id')}, role={current_user.get('role')}")
     new_sale = Sale(
         transaction_id=transaction_id,
         customer_name=sale_data.customer_name,
@@ -42,6 +44,7 @@ def create_sale_transaction(db: Session, sale_data, current_user: dict) -> Sale:
         payment_method=sale_data.payment_method,
         user_id=int(current_user["user_id"]),
         notes=sale_data.notes,
+        organization_id=current_user.get("organization_id")
     )
 
     product.quantity -= sale_data.quantity
@@ -56,9 +59,13 @@ def create_sale_transaction(db: Session, sale_data, current_user: dict) -> Sale:
     return new_sale
 
 
-def delete_sale_transaction(db: Session, sale_id: int) -> dict:
+def delete_sale_transaction(db: Session, sale_id: int, current_user: dict) -> dict:
     """Delete a sale and return metadata for audit/response."""
-    sale = db.query(Sale).filter(Sale.id == sale_id).first()
+    org_id = current_user.get("organization_id")
+    query = db.query(Sale).filter(Sale.id == sale_id)
+    if org_id is not None:
+        query = query.filter(Sale.organization_id == int(org_id))
+    sale = query.first()
     if not sale:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

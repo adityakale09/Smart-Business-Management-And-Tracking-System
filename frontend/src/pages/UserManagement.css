@@ -98,9 +98,19 @@
   color: #991b1b;
 }
 
+[data-theme='dark'] .role-admin {
+  background-color: rgba(153, 27, 27, 0.3);
+  color: #fca5a5;
+}
+
 .role-manager {
   background-color: #dbeafe;
   color: #1e40af;
+}
+
+[data-theme='dark'] .role-manager {
+  background-color: rgba(30, 64, 175, 0.3);
+  color: #93c5fd;
 }
 
 .role-employee {
@@ -108,9 +118,19 @@
   color: #065f46;
 }
 
+[data-theme='dark'] .role-employee {
+  background-color: rgba(6, 95, 70, 0.3);
+  color: #6ee7b7;
+}
+
 .role-vendor {
   background-color: #fef3c7;
   color: #92400e;
+}
+
+[data-theme='dark'] .role-vendor {
+  background-color: rgba(146, 64, 14, 0.3);
+  color: #fcd34d;
 }
 
 .status-badge {
@@ -126,9 +146,19 @@
   color: #065f46;
 }
 
+[data-theme='dark'] .status-active {
+  background-color: rgba(6, 95, 70, 0.3);
+  color: #6ee7b7;
+}
+
 .status-inactive {
   background-color: #fee2e2;
   color: #991b1b;
+}
+
+[data-theme='dark'] .status-inactive {
+  background-color: rgba(153, 27, 27, 0.3);
+  color: #fca5a5;
 }
 
 .actions-cell {
@@ -186,7 +216,7 @@
 .no-data {
   text-align: center;
   padding: 3rem;
-  color: #9ca3af;
+  color: var(--text-secondary);
   font-size: 1rem;
 }
 
@@ -221,13 +251,13 @@
   justify-content: space-between;
   align-items: center;
   padding: 1.5rem;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .modal-header h2 {
   font-size: 1.5rem;
   font-weight: 600;
-  color: #1a1a1a;
+  color: var(--text-primary);
   margin: 0;
 }
 
@@ -235,7 +265,7 @@
   background: none;
   border: none;
   font-size: 2rem;
-  color: #9ca3af;
+  color: var(--text-secondary);
   cursor: pointer;
   padding: 0;
   width: 2rem;
@@ -248,8 +278,8 @@
 }
 
 .modal-close:hover {
-  background-color: #f3f4f6;
-  color: #1f2937;
+  background-color: var(--hover-bg);
+  color: var(--text-primary);
 }
 
 .modal-form {
@@ -264,7 +294,7 @@
   display: block;
   margin-bottom: 0.5rem;
   font-weight: 500;
-  color: #374151;
+  color: var(--text-primary);
   font-size: 0.95rem;
 }
 
@@ -272,9 +302,11 @@
 .form-group select {
   width: 100%;
   padding: 0.75rem;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   font-size: 1rem;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
   transition: border-color 0.2s;
 }
 
@@ -303,7 +335,7 @@
   justify-content: flex-end;
   margin-top: 1.5rem;
   padding-top: 1.5rem;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--border-color);
 }
 
 .btn-primary,
@@ -327,12 +359,12 @@
 }
 
 .btn-secondary {
-  background-color: #f3f4f6;
-  color: #374151;
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
 }
 
 .btn-secondary:hover {
-  background-color: #e5e7eb;
+  background-color: var(--hover-bg);
 }
 
 .alert {

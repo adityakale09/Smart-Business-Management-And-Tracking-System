@@ -28,7 +28,7 @@ SUPPLIERS = ["TechSupply Inc", "ElectroParts Co", "Global Tech", "Computer Depot
 STORE_NAMES = ["Retail Store A", "Retail Store B", "Online Store", "Wholesale Supplier", "Tech Mart"]
 
 
-def generate_inventory_items(db: Session, count: int = 20, user_id: int = 1):
+def generate_inventory_items(db: Session, count: int = 20, user_id: int = 1, organization_id: int = None):
     """Generate random inventory items"""
     items = []
     
@@ -61,7 +61,8 @@ def generate_inventory_items(db: Session, count: int = 20, user_id: int = 1):
             unit_price=unit_price,
             supplier=random.choice(SUPPLIERS),
             location=random.choice(["Warehouse A", "Warehouse B", "Store Floor"]),
-            status="active" if quantity > reorder_level else "active"
+            status="active" if quantity > reorder_level else "active",
+            organization_id=organization_id
         )
         
         db.add(item)
@@ -79,7 +80,7 @@ def generate_inventory_items(db: Session, count: int = 20, user_id: int = 1):
         return []
 
 
-def generate_receipts(db: Session, count: int = 10, user_id: int = 1):
+def generate_receipts(db: Session, count: int = 10, user_id: int = 1, organization_id: int = None):
     """Generate sample receipts"""
     receipts = []
     inventory_items = db.query(Inventory).all()
@@ -101,7 +102,8 @@ def generate_receipts(db: Session, count: int = 10, user_id: int = 1):
             receipt_type=receipt_type,
             source=source,
             total_amount=0.0,
-            processed_by=user_id
+            processed_by=user_id,
+            organization_id=organization_id
         )
         db.add(receipt)
         db.flush()
@@ -120,7 +122,8 @@ def generate_receipts(db: Session, count: int = 10, user_id: int = 1):
                 receipt_id=receipt.id,
                 product_name=item.name,
                 quantity=quantity,
-                price_per_unit=unit_price
+                price_per_unit=unit_price,
+                organization_id=organization_id
             )
             db.add(receipt_item)
             total_amount += total_price
@@ -149,6 +152,7 @@ def generate_receipts(db: Session, count: int = 10, user_id: int = 1):
                 quantity_change=quantity_change,
                 previous_quantity=previous_quantity,
                 new_quantity=item.quantity,
+                organization_id=organization_id,
                 notes=f"Generated from dummy receipt #{receipt.id}",
                 created_at=receipt_date
             )
@@ -169,7 +173,7 @@ def generate_receipts(db: Session, count: int = 10, user_id: int = 1):
         return []
 
 
-def seed_database():
+def seed_database(organization_id: int = None):
     """Main function to seed the database with dummy data"""
     db = SessionLocal()
     
@@ -185,10 +189,10 @@ def seed_database():
         print("[*] Starting database seeding...")
         
         # Generate inventory items
-        inventory_items = generate_inventory_items(db, count=20, user_id=user_id)
+        inventory_items = generate_inventory_items(db, count=20, user_id=user_id, organization_id=organization_id)
         
         # Generate receipts
-        receipts = generate_receipts(db, count=10, user_id=user_id)
+        receipts = generate_receipts(db, count=10, user_id=user_id, organization_id=organization_id)
         
         print("[+] Database seeding completed successfully!")
         

@@ -115,10 +115,16 @@
 
 .inventory-controls {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 12px;
   margin-bottom: 24px;
+}
+
+.inventory-controls-row {
+  display: flex;
+  align-items: center;
   gap: 16px;
+  flex-wrap: wrap;
 }
 
 .search-box {
@@ -162,6 +168,22 @@
   cursor: pointer;
 }
 
+.category-filter {
+  padding: 10px 12px;
+  border: 1px solid var(--border-color, #cbd5e1);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--text-primary, #22223b);
+  background: var(--bg-secondary, #fff);
+  outline: none;
+  cursor: pointer;
+  min-width: 160px;
+}
+
+.category-filter:focus {
+  border-color: #667eea;
+}
+
 .inventory-table-container {
   background: var(--bg-secondary);
   border-radius: 12px;
@@ -203,8 +225,16 @@
   background-color: rgba(254, 242, 242, 0.5);
 }
 
+.inventory-table tbody tr.out-of-stock-row {
+  background-color: rgba(254, 202, 202, 0.7);
+}
+
 [data-theme='dark'] .inventory-table tbody tr.low-stock {
   background-color: rgba(127, 29, 29, 0.3);
+}
+
+[data-theme='dark'] .inventory-table tbody tr.out-of-stock-row {
+  background-color: rgba(185, 28, 28, 0.5);
 }
 
 .inventory-table tbody tr.recently-updated {
@@ -222,15 +252,6 @@
   }
   100% {
     background-color: rgba(240, 253, 244, 0.5);
-  }
-}
-
-[data-theme='dark'] @keyframes highlight {
-  0% {
-    background-color: rgba(20, 83, 45, 0.5);
-  }
-  100% {
-    background-color: rgba(20, 83, 45, 0.3);
   }
 }
 

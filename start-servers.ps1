@@ -50,8 +50,8 @@ if ($lanIp) {
 }
 Write-Host ""
 Write-Host "Default Admin Credentials:" -ForegroundColor Magenta
-Write-Host "  Username: admin" -ForegroundColor White
-Write-Host "  Password: admin123" -ForegroundColor White
+Write-Host "  Username: acme_admin" -ForegroundColor White
+Write-Host "  Password: Admin@123" -ForegroundColor White
 Write-Host ""
 Write-Host "Press any key to exit this window (servers will continue running)..." -ForegroundColor Gray
 $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")

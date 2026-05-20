@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { receiptAPI } from '../api/receipt'
 import ReceiptUpload from '../components/ReceiptUpload'
 import { getErrorMessage } from '../utils/errorHandler'
-import { Trash2, Edit, Eye, X } from 'lucide-react'
+import { Trash2, Edit, Eye, X, Download, BarChart3 } from 'lucide-react'
 import './ReceiptsPage.css'
 
 const ReceiptsPage = () => {
@@ -10,18 +10,60 @@ const ReceiptsPage = () => {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [filter, setFilter] = useState('all')
+  const [categoryFilter, setCategoryFilter] = useState('')
   const [viewModal, setViewModal] = useState(null)
   const [editModal, setEditModal] = useState(null)
+  const [analytics, setAnalytics] = useState(null)
+  const [analyticsLoading, setAnalyticsLoading] = useState(true)
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
     loadReceipts()
-  }, [filter])
+  }, [filter, categoryFilter, startDate, endDate])
+
+  useEffect(() => {
+    loadAnalytics()
+  }, [startDate, endDate])
+
+  const loadAnalytics = async () => {
+    try {
+      setAnalyticsLoading(true)
+      const params = {}
+      if (startDate) {
+        params.start_date = startDate
+      }
+      if (endDate) {
+        params.end_date = endDate
+      }
+      const data = await receiptAPI.getAnalytics(params)
+      setAnalytics(data)
+    } catch (err) {
+      console.error('Error loading analytics:', err)
+      setAnalytics(null)
+    } finally {
+      setAnalyticsLoading(false)
+    }
+  }
 
   const loadReceipts = async () => {
     try {
       setLoading(true)
       setError(null)
-      const params = filter !== 'all' ? { receipt_type: filter } : {}
+      const params = {}
+      if (filter !== 'all') {
+        params.receipt_type = filter
+      }
+      if (categoryFilter) {
+        params.category = categoryFilter
+      }
+      if (startDate) {
+        params.start_date = startDate
+      }
+      if (endDate) {
+        params.end_date = endDate
+      }
       const response = await receiptAPI.getReceipts(params)
       if (response && response.receipts) {
         setReceipts(Array.isArray(response.receipts) ? response.receipts : [])
@@ -60,7 +102,9 @@ const ReceiptsPage = () => {
     setEditModal({
       id: receipt.id,
       source: receipt.source || '',
-      receipt_type: receipt.receipt_type || 'purchase'
+      receipt_type: receipt.receipt_type || 'purchase',
+      category: receipt.category || '',
+      notes: receipt.notes || ''
     })
   }
 
@@ -70,12 +114,56 @@ const ReceiptsPage = () => {
       const formData = new FormData()
       formData.append('source', editModal.source)
       formData.append('receipt_type', editModal.receipt_type)
+      formData.append('category', editModal.category)
+      formData.append('notes', editModal.notes)
       
       await receiptAPI.updateReceipt(editModal.id, formData)
       setEditModal(null)
       loadReceipts()
     } catch (err) {
       alert(getErrorMessage(err) || 'Failed to update receipt')
+    }
+  }
+
+  const handleExport = async (format) => {
+    try {
+      setExporting(true)
+      const params = { format }
+      if (startDate) {
+        params.start_date = startDate
+      }
+      if (endDate) {
+        params.end_date = endDate
+      }
+      if (filter !== 'all') {
+        params.receipt_type = filter
+      }
+      if (categoryFilter) {
+        params.category = categoryFilter
+      }
+      
+      if (format === 'json') {
+        const data = await receiptAPI.exportReceipts(params)
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `receipts_export_${new Date().toISOString().slice(0, 10)}.json`
+        a.click()
+        URL.revokeObjectURL(url)
+      } else {
+        const blob = await receiptAPI.exportReceipts({ ...params, format: 'csv' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `receipts_export_${new Date().toISOString().slice(0, 10)}.csv`
+        a.click()
+        URL.revokeObjectURL(url)
+      }
+    } catch (err) {
+      alert(getErrorMessage(err) || 'Failed to export receipts')
+    } finally {
+      setExporting(false)
     }
   }
 
@@ -115,8 +203,123 @@ const ReceiptsPage = () => {
             <option value="purchase">Purchases</option>
             <option value="sale">Sales</option>
           </select>
+          <label>Category:</label>
+          <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+            <option value="">All Categories</option>
+            <option value="grocery">Grocery</option>
+            <option value="electronics">Electronics</option>
+            <option value="office_supplies">Office Supplies</option>
+            <option value="restaurant">Restaurant</option>
+            <option value="transportation">Transportation</option>
+            <option value="utilities">Utilities</option>
+            <option value="medical">Medical</option>
+            <option value="other">Other</option>
+          </select>
+          <label>From:</label>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="date-filter-input"
+          />
+          <label>To:</label>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="date-filter-input"
+          />
+          <div className="export-buttons">
+            <button
+              className="btn-icon btn-export"
+              onClick={() => handleExport('csv')}
+              disabled={exporting}
+              title="Export as CSV"
+            >
+              <Download size={16} />
+              <span>CSV</span>
+            </button>
+            <button
+              className="btn-icon btn-export"
+              onClick={() => handleExport('json')}
+              disabled={exporting}
+              title="Export as JSON"
+            >
+              <Download size={16} />
+              <span>JSON</span>
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Analytics Summary Section */}
+      {analytics && !analyticsLoading && (
+        <div className="analytics-summary">
+          <div className="analytics-header">
+            <BarChart3 size={20} />
+            <h3>Receipt Analytics</h3>
+          </div>
+          <div className="analytics-cards">
+            <div className="analytics-card">
+              <span className="analytics-label">Total Receipts</span>
+              <span className="analytics-value">{analytics.total_receipts}</span>
+            </div>
+            <div className="analytics-card">
+              <span className="analytics-label">Total Amount</span>
+              <span className="analytics-value">{formatCurrency(analytics.total_amount)}</span>
+            </div>
+            <div className="analytics-card">
+              <span className="analytics-label">Total Items</span>
+              <span className="analytics-value">{analytics.total_items}</span>
+            </div>
+            <div className="analytics-card">
+              <span className="analytics-label">Avg per Receipt</span>
+              <span className="analytics-value">{formatCurrency(analytics.average_per_receipt)}</span>
+            </div>
+          </div>
+          {analytics.category_breakdown && analytics.category_breakdown.length > 0 && (
+            <div className="analytics-breakdown">
+              <h4>Category Breakdown</h4>
+              <div className="breakdown-bars">
+                {analytics.category_breakdown.map((cat, i) => (
+                  <div key={i} className="breakdown-item">
+                    <div className="breakdown-label">
+                      <span>{cat.category.replace('_', ' ')}</span>
+                      <span>{formatCurrency(cat.total_amount)} ({cat.percentage}%)</span>
+                    </div>
+                    <div className="breakdown-bar-track">
+                      <div
+                        className="breakdown-bar-fill"
+                        style={{ width: `${Math.max(cat.percentage, 2)}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {analytics.top_sources && analytics.top_sources.length > 0 && (
+            <div className="analytics-sources">
+              <h4>Top Sources</h4>
+              <div className="sources-list">
+                {analytics.top_sources.map((src, i) => (
+                  <div key={i} className="source-item">
+                    <span className="source-name">{src.source}</span>
+                    <span className="source-count">{src.count} receipts</span>
+                    <span className="source-amount">{formatCurrency(src.total_amount)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {analyticsLoading && (
+        <div className="analytics-summary analytics-loading">
+          <div className="loading">Loading analytics...</div>
+        </div>
+      )}
 
       <div className="content-grid">
         <div className="upload-section">
@@ -147,6 +350,7 @@ const ReceiptsPage = () => {
                   <tr>
                     <th>Date</th>
                     <th>Type</th>
+                    <th>Category</th>
                     <th>Source</th>
                     <th>Items</th>
                     <th>Total Amount</th>
@@ -168,6 +372,15 @@ const ReceiptsPage = () => {
                             <span className={`type-badge ${receipt.receipt_type || 'unknown'}`}>
                               {receipt.receipt_type || 'N/A'}
                             </span>
+                          </td>
+                          <td>
+                            {receipt.category ? (
+                              <span className={`category-badge ${receipt.category}`}>
+                                {receipt.category.replace('_', ' ')}
+                              </span>
+                            ) : (
+                              <span className="no-category">—</span>
+                            )}
                           </td>
                           <td>{receipt.source || 'Manual Upload'}</td>
                           <td>{itemCount}</td>
@@ -228,8 +441,10 @@ const ReceiptsPage = () => {
               <div className="receipt-details">
                 <p><strong>Source:</strong> {viewModal.source || 'N/A'}</p>
                 <p><strong>Type:</strong> {viewModal.receipt_type}</p>
+                <p><strong>Category:</strong> {viewModal.category || 'Uncategorized'}</p>
                 <p><strong>Date:</strong> {formatDate(viewModal.receipt_date)}</p>
                 <p><strong>Total:</strong> {formatCurrency(viewModal.total_amount)}</p>
+                {viewModal.notes && <p><strong>Notes:</strong> {viewModal.notes}</p>}
               </div>
               {viewModal.image_data ? (
                 <div className="receipt-image-container">
@@ -272,6 +487,32 @@ const ReceiptsPage = () => {
                   <option value="purchase">Purchase</option>
                   <option value="sale">Sale</option>
                 </select>
+              </div>
+              <div className="form-group">
+                <label>Category</label>
+                <select
+                  value={editModal.category}
+                  onChange={(e) => setEditModal({ ...editModal, category: e.target.value })}
+                >
+                  <option value="">Uncategorized</option>
+                  <option value="grocery">Grocery</option>
+                  <option value="electronics">Electronics</option>
+                  <option value="office_supplies">Office Supplies</option>
+                  <option value="restaurant">Restaurant</option>
+                  <option value="transportation">Transportation</option>
+                  <option value="utilities">Utilities</option>
+                  <option value="medical">Medical</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Notes</label>
+                <textarea
+                  value={editModal.notes}
+                  onChange={(e) => setEditModal({ ...editModal, notes: e.target.value })}
+                  placeholder="Optional notes about this receipt"
+                  rows={3}
+                />
               </div>
               <div className="form-actions">
                 <button type="button" className="btn-secondary" onClick={() => setEditModal(null)}>

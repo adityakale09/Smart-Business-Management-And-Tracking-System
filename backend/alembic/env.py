@@ -21,7 +21,8 @@ if db_url:
 # add your model's MetaData object here
 # for 'autogenerate' support
 from app.database import Base
-from app.models import user, sales, inventory, employee, receipt
+from app.models import user, organization, sales, inventory, employee, receipt
+from app.models.audit import AuditLog
 target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,

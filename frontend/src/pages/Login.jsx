@@ -32,7 +32,12 @@ const Login = () => {
         console.warn('Could not fetch full user data:', err)
       }
 
-      navigate('/dashboard')
+      // Redirect based on role — super_admin goes to platform page
+      if (response.role === 'super_admin') {
+        navigate('/organizations')
+      } else {
+        navigate('/dashboard')
+      }
 
     } catch (err) {
       setError(getErrorMessage(err) || 'Login failed. Please try again.')

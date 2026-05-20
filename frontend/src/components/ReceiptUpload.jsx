@@ -113,7 +113,7 @@ const applySharpenToContext = (ctx, width, height, amount) => {
 const ReceiptUpload = ({ onUploadSuccess }) => {
   const [file, setFile] = useState(null)
   const [preview, setPreview] = useState(null)
-  const [receiptType, setReceiptType] = useState('')
+  const [receiptType, setReceiptType] = useState('purchase')
   const [uploading, setUploading] = useState(false)
   const [result, setResult] = useState(null)
   const [previewResult, setPreviewResult] = useState(null)
@@ -676,7 +676,7 @@ const ReceiptUpload = ({ onUploadSuccess }) => {
           clearSavedEdit()
           setEditorNotice('')
           resetEditorState()
-          setReceiptType('')
+          setReceiptType('purchase')
           setPreviewResult(null)
           document.getElementById('file-input').value = ''
         }, 3000)
@@ -713,10 +713,23 @@ const ReceiptUpload = ({ onUploadSuccess }) => {
 
         {preview && (
           <div className="preview-container">
-            <div className="preview-header">
-              <h3>Image Editor</h3>
-              {isImageFile && <span className="editor-hint">Crop mode: drag to select area, wheel to zoom. Pan mode: drag/scroll to move image.</span>}
-            </div>
+            <div className="preview-split">
+              {/* Original Receipt Image */}
+              <div className="original-preview">
+                <div className="preview-header">
+                  <h3>Original Receipt</h3>
+                </div>
+                <div className="original-image-wrapper">
+                  <img src={preview} alt="Original receipt" className="original-receipt-image" />
+                </div>
+              </div>
+
+              {/* Editor */}
+              <div className="editor-section">
+                <div className="preview-header">
+                  <h3>Image Editor</h3>
+                  {isImageFile && <span className="editor-hint">Crop mode: drag to select area, wheel to zoom. Pan mode: drag/scroll to move image.</span>}
+                </div>
 
             {isImageFile ? (
               <>
@@ -803,11 +816,13 @@ const ReceiptUpload = ({ onUploadSuccess }) => {
             ) : (
               <img src={preview} alt="Receipt preview" className="preview-image" />
             )}
-          </div>
+            </div>{/* Close editor-section */}
+          </div>{/* Close preview-split */}
+        </div>
         )}
 
         <div className="form-group">
-          <label htmlFor="receipt-type">Receipt Type (Optional)</label>
+          <label htmlFor="receipt-type">Receipt Type</label>
           <select
             id="receipt-type"
             value={receiptType}
@@ -818,9 +833,7 @@ const ReceiptUpload = ({ onUploadSuccess }) => {
             }}
             disabled={uploading}
           >
-            <option value="">Auto-detect</option>
             <option value="purchase">Purchase (Add Stock)</option>
-            <option value="sale">Sale (Deduct Stock)</option>
           </select>
         </div>
 

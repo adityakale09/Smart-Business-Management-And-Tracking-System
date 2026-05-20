@@ -92,10 +92,13 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     if user_id is None:
         raise credentials_exception
     
-    # In a real implementation, fetch user from database
-    # For now, return the user_id and role from token
+    # Return user info including organization_id from token
+    # Super admin is NOT org-scoped; role checks on specific endpoints 
+    # (require_super_admin) control access to platform-level features.
     return {
         "user_id": user_id,
-        "role": payload.get("role", "employee")
+        "role": payload.get("role", "employee"),
+        "username": payload.get("username", ""),
+        "organization_id": payload.get("organization_id")
     }
 

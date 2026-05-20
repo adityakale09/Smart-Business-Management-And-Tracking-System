@@ -36,6 +36,7 @@ export const AuditLogsFilter = ({
       action: "",
       entity_type: "",
       status: "",
+      severity: "",
       date_from: "",
       date_to: "",
       search: "",
@@ -104,6 +105,21 @@ export const AuditLogsFilter = ({
             <option value="">All Statuses</option>
             <option value="success">Success</option>
             <option value="failure">Failure</option>
+          </select>
+        </div>
+
+        <div className="filter-section">
+          <label htmlFor="severity">Severity</label>
+          <select
+            id="severity"
+            className="filter-select"
+            value={localFilters.severity || ""}
+            onChange={(e) => handleFilterChange("severity", e.target.value)}
+          >
+            <option value="">All Severities</option>
+            <option value="INFO">INFO</option>
+            <option value="WARNING">WARNING</option>
+            <option value="CRITICAL">CRITICAL</option>
           </select>
         </div>
       </div>

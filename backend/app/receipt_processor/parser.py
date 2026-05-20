@@ -4,7 +4,7 @@ Receipt parser for extracting structured data from OCR text
 
 import re
 from typing import List, Dict, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class ReceiptParser:
@@ -52,6 +52,118 @@ class ReceiptParser:
             re.IGNORECASE,
         )
         
+    def is_valid_receipt(self, text: str) -> bool:
+        """
+        Validate whether OCR text actually represents a receipt.
+        Checks for key receipt indicators like prices, quantities, dates, and totals.
+        
+        Args:
+            text: OCR extracted text
+            
+        Returns:
+            True if the text appears to be a valid receipt, False otherwise
+        """
+        if not text or len(text.strip()) < 15:
+            return False
+
+        text_lower = text.lower()
+
+        # Count receipt-like indicators
+        score = 0
+
+        # Must have price-like patterns (numbers with decimal points)
+        price_matches = re.findall(r'\d+\.\d{2}', text)
+        if len(price_matches) >= 2:
+            score += 3
+        elif len(price_matches) >= 1:
+            score += 1
+
+        # Check for receipt/invoice/bill keywords
+        receipt_keywords = ['receipt', 'invoice', 'bill', 'purchase', 'total', 'subtotal', 'store', 'shop', 'mart', 'bought', 'item', 'qty', 'quantity', 'price', 'amount', 'payment', 'cash', 'change']
+        keyword_count = sum(1 for kw in receipt_keywords if kw in text_lower)
+        if keyword_count >= 3:
+            score += 3
+        elif keyword_count >= 1:
+            score += 1
+
+        # Check for date patterns
+        date_patterns = [
+            r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}',
+            r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}',
+            r'\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*'
+        ]
+        if any(re.search(p, text, re.IGNORECASE) for p in date_patterns):
+            score += 2
+
+        # Check for currency symbols
+        currency_symbols = ['₹', '$', '€', '£', '¥']
+        if any(sym in text for sym in currency_symbols):
+            score += 1
+
+        # Check for numeric lines with product-like content (alphanumeric + numbers)
+        lines = text.split('\n')
+        data_lines = sum(1 for line in lines if re.search(r'[A-Za-z]', line) and re.search(r'\d', line))
+        if data_lines >= 3:
+            score += 2
+        elif data_lines >= 1:
+            score += 1
+
+        # Minimum score threshold: 4 (requires at least a few indicators)
+        return score >= 4
+
+    def categorize_receipt(self, text: str, items: List[Dict]) -> str:
+        """
+        Auto-categorize a receipt based on OCR text content and extracted items.
+        
+        Args:
+            text: OCR extracted text
+            items: Extracted item dictionaries
+            
+        Returns:
+            Category string (grocery, electronics, restaurant, etc.) or None
+        """
+        text_lower = text.lower()
+        product_names = ' '.join(item.get('product_name', '') for item in items).lower()
+        combined = text_lower + ' ' + product_names
+
+        # Grocery
+        grocery_kw = ['grocery', 'supermarket', 'food', 'vegetables', 'fruits', 'milk', 'bread', 'rice', 'sugar', 'oil', 'spices', 'snacks', 'beverages', 'groceries']
+        if any(kw in combined for kw in grocery_kw):
+            return 'grocery'
+
+        # Electronics
+        electronics_kw = ['electronics', 'electric', 'battery', 'charger', 'cable', 'phone', 'computer', 'laptop', 'accessories', 'digital', 'camera', 'headphone']
+        if any(kw in combined for kw in electronics_kw):
+            return 'electronics'
+
+        # Restaurant
+        restaurant_kw = ['restaurant', 'cafe', 'dining', 'food', 'meal', 'lunch', 'dinner', 'breakfast', 'pizza', 'burger', 'coffee', 'tea', 'snack', 'bakery']
+        if any(kw in combined for kw in restaurant_kw):
+            return 'restaurant'
+
+        # Office Supplies
+        office_kw = ['office', 'stationery', 'paper', 'printer', 'pen', 'pencil', 'notebook', 'desk', 'supplies', 'folder', 'file']
+        if any(kw in combined for kw in office_kw):
+            return 'office_supplies'
+
+        # Transportation
+        transport_kw = ['fuel', 'gas', 'petrol', 'diesel', 'transport', 'taxi', 'parking', 'toll', 'travel', 'mileage']
+        if any(kw in combined for kw in transport_kw):
+            return 'transportation'
+
+        # Utilities
+        utilities_kw = ['utility', 'electricity', 'water', 'gas', 'internet', 'phone bill', 'mobile', 'broadband', 'subscription']
+        if any(kw in combined for kw in utilities_kw):
+            return 'utilities'
+
+        # Medical
+        medical_kw = ['medical', 'pharmacy', 'medicine', 'drug', 'hospital', 'clinic', 'doctor', 'health', 'prescription', 'diagnostic', 'lab']
+        if any(kw in combined for kw in medical_kw):
+            return 'medical'
+
+        # Default to None (uncategorized)
+        return None
+
     def parse_receipt(self, text: str) -> Dict:
         """
         Parse receipt text to extract structured data
@@ -82,6 +194,9 @@ class ReceiptParser:
         # Detect currency used in receipt values
         currency_code = self._detect_currency(text)
         
+        # Auto-categorize if possible
+        category = self.categorize_receipt(text, items)
+        
         return {
             'receipt_type': receipt_type,
             'receipt_date': receipt_date,
@@ -89,6 +204,7 @@ class ReceiptParser:
             'items': items,
             'total_amount': total,
             'currency_code': currency_code,
+            'category': category,
         }
 
     def _detect_currency(self, text: str) -> str:
@@ -171,7 +287,7 @@ class ReceiptParser:
                     continue
         
         # Return current date if no date found
-        return datetime.now()
+        return datetime.now(timezone.utc)
     
     def _extract_items(self, lines: List[str]) -> List[Dict]:
         """

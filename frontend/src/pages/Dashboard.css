@@ -31,7 +31,6 @@
   box-shadow: var(--shadow-sm);
   border: 1px solid var(--border-color);
   padding: 24px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   display: flex;
   gap: 16px;
   align-items: flex-start;
@@ -79,12 +78,9 @@
 .suggestions-section {
   background: var(--bg-secondary);
   border-radius: 12px;
-  padding: 24px;
   box-shadow: var(--shadow-sm);
   border: 1px solid var(--border-color);
-  border-radius: 12px;
   padding: 24px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   margin-top: 32px;
 }
 

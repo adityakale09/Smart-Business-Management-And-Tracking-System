@@ -10,6 +10,7 @@ import './Inventory.css'
 const Inventory = () => {
   const [searchTerm, setSearchTerm] = useState('')
   const [lowStockFilter, setLowStockFilter] = useState(false)
+  const [selectedCategory, setSelectedCategory] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [showRestockModal, setShowRestockModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -32,8 +33,8 @@ const Inventory = () => {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const { data, isLoading, error: inventoryError } = useQuery({
-    queryKey: ['inventory', { low_stock: lowStockFilter, page, page_size: pageSize, search: searchTerm }],
-    queryFn: () => inventoryAPI.getAll({ low_stock: lowStockFilter, page, page_size: pageSize, search: searchTerm }),
+    queryKey: ['inventory', { low_stock: lowStockFilter, page, page_size: pageSize, search: searchTerm, category: selectedCategory }],
+    queryFn: () => inventoryAPI.getAll({ low_stock: lowStockFilter, page, page_size: pageSize, search: searchTerm, category: selectedCategory || undefined }),
     onError: (error) => {
       console.error('Error loading inventory:', error)
     },
@@ -42,6 +43,7 @@ const Inventory = () => {
 
   const inventory = data?.items || []
   const total = data?.total || 0
+  const categories = [...new Set((data?.items || []).map(i => i.category).filter(Boolean))]
 
   const createProductMutation = useMutation({
     mutationFn: async (productData) => {
@@ -137,7 +139,9 @@ const Inventory = () => {
     },
     onError: (error) => {
       console.error('Error restocking product:', error)
-      alert(`Error restocking product: ${error.message}`)
+      const serverDetail = error?.response?.data?.detail
+      const detailText = typeof serverDetail === 'string' ? serverDetail : getErrorMessage(error)
+      alert(`Error restocking product: ${detailText || error.message}`)
     }
   })
 
@@ -372,23 +376,39 @@ const Inventory = () => {
       </div>
 
       <div className="inventory-controls">
-        <div className="search-box">
-          <Search size={20} />
-          <input
-            type="text"
-            placeholder="Search by name or SKU..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+        <div className="inventory-controls-row">
+          <div className="search-box">
+            <Search size={20} />
+            <input
+              type="text"
+              placeholder="Search by name or SKU..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          {categories.length > 0 && (
+            <select
+              className="category-filter"
+              value={selectedCategory}
+              onChange={(e) => { setSelectedCategory(e.target.value); setPage(1) }}
+            >
+              <option value="">All Categories</option>
+              {categories.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+          )}
         </div>
-        <label className="filter-checkbox">
-          <input
-            type="checkbox"
-            checked={lowStockFilter}
-            onChange={(e) => setLowStockFilter(e.target.checked)}
-          />
-          <span>Show low stock only</span>
-        </label>
+        <div className="inventory-controls-row">
+          <label className="filter-checkbox">
+            <input
+              type="checkbox"
+              checked={lowStockFilter}
+              onChange={(e) => setLowStockFilter(e.target.checked)}
+            />
+            <span>Show low stock only (≤5)</span>
+          </label>
+        </div>
       </div>
 
       <div className="inventory-table-container">
@@ -419,7 +439,9 @@ const Inventory = () => {
                 inventory.map((item) => (
                   <tr 
                     key={item.id} 
-                    className={`${item.quantity <= item.reorder_level ? 'low-stock' : ''} ${item.recently_updated ? 'recently-updated' : ''}`}
+                    className={`${item.quantity <= 5 ? 'low-stock' : ''} ${item.quantity <= 0 ? 'out-of-stock-row' : ''} ${item.recently_updated ? 'recently-updated' : ''}`}
+                    onClick={(e) => { if (!e.target.closest('.action-buttons') && !e.target.closest('.btn-sm')) handleEdit(item) }}
+                    style={{ cursor: 'pointer' }}
                   >
                     <td>{item.sku}</td>
                     <td>
@@ -432,7 +454,7 @@ const Inventory = () => {
                     </td>
                     <td>{item.category || 'N/A'}</td>
                     <td>
-                      <span className={item.quantity <= item.reorder_level ? 'quantity-low' : ''}>
+                      <span className={item.quantity <= 5 ? 'quantity-low' : ''}>
                         {item.quantity || 0}
                       </span>
                     </td>
@@ -440,13 +462,13 @@ const Inventory = () => {
                     <td>₹{(item.unit_price || 0).toFixed(2)}</td>
                     <td>
                       <span className={`status-badge ${item.status || 'active'}`}>
-                        {item.status === 'low_stock' ? (
+                        {item.status === 'low_stock' || item.status === 'out_of_stock' ? (
                           <>
                             <AlertTriangle size={14} />
-                            Low Stock
+                            {item.status === 'out_of_stock' ? 'Out of Stock' : 'Low Stock'}
                           </>
                         ) : (
-                          item.status || 'active'
+                          (item.status || 'active').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
                         )}
                       </span>
                     </td>
@@ -644,7 +666,7 @@ const Inventory = () => {
                   type="text"
                   value={formData.sku}
                   disabled
-                  style={{ backgroundColor: '#f5f5f5', cursor: 'not-allowed' }}
+                  style={{ cursor: 'not-allowed' }}
                 />
               </div>
               <div className="form-group">

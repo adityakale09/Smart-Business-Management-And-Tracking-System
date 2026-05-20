@@ -170,16 +170,15 @@
   margin-top: 30px;
 }
 
-.form-group {
+.login-container .form-group {
   margin-bottom: 24px;
 }
 
-.form-group label {
+.login-container .form-group label {
   display: flex;
   align-items: center;
   gap: 12px;
-  /* margin-left:5px; */
-  color: #ffffff !important;
+  color: #ffffff;
   font-size: 12px;
   font-weight: 600;
   margin-bottom: 10px;
@@ -187,20 +186,20 @@
   letter-spacing: 1px;
 }
 
-.input-icon {
+.login-container .input-icon {
   width: 16px;
   height: 16px;
-  color: #ffffff !important;
+  color: #ffffff;
   margin-right: 5px;
 }
 
-.form-input {
+.login-container .form-input {
   width: 100%;
   padding: 14px 18px;
-  background: rgba(255, 255, 255, 0.08) !important;
-  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 12px;
-  color: #ffffff !important;
+  color: #ffffff;
   font-size: 15px;
   transition: all 0.3s ease;
   outline: none;
@@ -209,21 +208,21 @@
   appearance: none;
 }
 
-.form-input::placeholder {
-  color: rgba(255, 255, 255, 0.5) !important;
+.login-container .form-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
 }
 
-.form-input:focus {
-  background: rgba(255, 255, 255, 0.12) !important;
-  border-color: rgba(102, 126, 234, 0.7) !important;
+.login-container .form-input:focus {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(102, 126, 234, 0.7);
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
 }
 
 /* Override autofill styles */
-.form-input:-webkit-autofill,
-.form-input:-webkit-autofill:hover,
-.form-input:-webkit-autofill:focus,
-.form-input:-webkit-autofill:active {
+.login-container .form-input:-webkit-autofill,
+.login-container .form-input:-webkit-autofill:hover,
+.login-container .form-input:-webkit-autofill:focus,
+.login-container .form-input:-webkit-autofill:active {
   -webkit-box-shadow: 0 0 0 30px rgba(15, 12, 41, 0.95) inset !important;
   -webkit-text-fill-color: #ffffff !important;
   transition: background-color 5000s ease-in-out 0s;

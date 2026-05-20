@@ -26,6 +26,7 @@ export const AuditLogs = () => {
     action: "",
     entity_type: "",
     status: "",
+    severity: "",
     date_from: "",
     date_to: "",
     search: "",
@@ -33,14 +34,14 @@ export const AuditLogs = () => {
 
   // Check admin access
   useEffect(() => {
-    if (user?.role !== "admin") {
+    if (user?.role !== "admin" && user?.role !== "super_admin") {
       setError("Only administrators can access audit logs");
     }
   }, [user]);
 
   // Fetch filter options and logs on component mount and when filters change
   useEffect(() => {
-    if (user?.role !== "admin") return;
+    if (user?.role !== "admin" && user?.role !== "super_admin") return;
 
     const fetchData = async () => {
       setIsLoading(true);
@@ -116,22 +117,53 @@ export const AuditLogs = () => {
     }
   };
 
-  const handleDeleteLog = async (logId) => {
-    if (!window.confirm("Are you sure you want to delete this audit log?")) {
-      return;
-    }
-
+  const handleExportCSV = async () => {
     try {
-      await auditApi.deleteAuditLog(logId);
-      setSelectedLog(null);
-      await fetchLogs();
+      const response = await auditApi.exportAuditLogs("csv", filters);
+      const blob = new Blob([response], { type: "text/csv" });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `audit_logs_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
     } catch (err) {
-      setError("Failed to delete audit log");
+      setError("Failed to export audit logs");
       console.error(err);
     }
   };
 
-  if (user?.role !== "admin") {
+  const handleExportJSON = async () => {
+    try {
+      const response = await auditApi.exportAuditLogs("json", filters);
+      const blob = new Blob([response], { type: "application/json" });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `audit_logs_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      setError("Failed to export audit logs");
+      console.error(err);
+    }
+  };
+
+  const handleVerifyIntegrity = async () => {
+    try {
+      const report = await auditApi.verifyIntegrity();
+      alert(`Integrity Report:\n${report.report}`);
+    } catch (err) {
+      setError("Integrity verification failed");
+      console.error(err);
+    }
+  };
+
+  if (user?.role !== "admin" && user?.role !== "super_admin") {
     return (
       <div className="audit-logs-container">
         <div className="error-message">
@@ -156,16 +188,26 @@ export const AuditLogs = () => {
         <div className="stats-grid">
           <div className="stat-card">
             <div className="stat-value">{stats.total_logs}</div>
-            <div className="stat-label">Total Logs (7 days)</div>
+            <div className="stat-label">Total Logs ({stats.period_days}d)</div>
           </div>
           <div className="stat-card success">
             <div className="stat-value">{stats.successful_actions}</div>
-            <div className="stat-label">Successful Actions</div>
+            <div className="stat-label">Successful</div>
           </div>
           <div className="stat-card danger">
             <div className="stat-value">{stats.failed_actions}</div>
-            <div className="stat-label">Failed Actions</div>
+            <div className="stat-label">Failed</div>
           </div>
+          <div className={`stat-card ${stats.failure_rate > 10 ? "danger" : stats.failure_rate > 5 ? "warning" : "success"}`}>
+            <div className="stat-value">{stats.failure_rate}%</div>
+            <div className="stat-label">Failure Rate</div>
+          </div>
+          {stats.severity_counts && Object.entries(stats.severity_counts).map(([sev, count]) => (
+            <div key={sev} className={`stat-card severity-${sev.toLowerCase()}`}>
+              <div className="stat-value">{count}</div>
+              <div className="stat-label">{sev}</div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -182,13 +224,39 @@ export const AuditLogs = () => {
       <div className="logs-section">
         <div className="logs-header">
           <h2>Audit Logs ({total} total)</h2>
-          <button
-            className="btn-refresh"
-            onClick={handleFilterApply}
-            disabled={isLoading}
-          >
-            {isLoading ? "Loading..." : "Refresh"}
-          </button>
+          <div className="logs-actions">
+            <button
+              className="btn-export"
+              onClick={handleExportCSV}
+              disabled={isLoading || logs.length === 0}
+              title="Export as CSV for compliance reporting"
+            >
+              Export CSV
+            </button>
+            <button
+              className="btn-export"
+              onClick={handleExportJSON}
+              disabled={isLoading || logs.length === 0}
+              title="Export as JSON for compliance reporting"
+            >
+              Export JSON
+            </button>
+            <button
+              className="btn-verify"
+              onClick={handleVerifyIntegrity}
+              disabled={isLoading}
+              title="Verify audit log hash chain integrity (tamper detection)"
+            >
+              Verify Integrity
+            </button>
+            <button
+              className="btn-refresh"
+              onClick={handleFilterApply}
+              disabled={isLoading}
+            >
+              {isLoading ? "Loading..." : "Refresh"}
+            </button>
+          </div>
         </div>
 
         {isLoading ? (
@@ -205,6 +273,7 @@ export const AuditLogs = () => {
                     <th>User</th>
                     <th>Action</th>
                     <th>Entity Type</th>
+                    <th>Severity</th>
                     <th>Status</th>
                     <th>IP Address</th>
                     <th>Actions</th>
@@ -219,6 +288,11 @@ export const AuditLogs = () => {
                       <td className="td-user">{log.username || "System"}</td>
                       <td className="td-action">{log.action}</td>
                       <td className="td-entity">{log.entity_type}</td>
+                      <td className="td-severity">
+                        <span className={`badge badge-severity badge-${log.severity ? log.severity.toLowerCase() : "info"}`}>
+                          {log.severity || "INFO"}
+                        </span>
+                      </td>
                       <td className="td-status">
                         <span className={`badge badge-${log.status}`}>
                           {log.status}
@@ -312,6 +386,12 @@ export const AuditLogs = () => {
                   </span>
                 </div>
                 <div className="detail-item">
+                  <label>Severity:</label>
+                  <span className={`badge badge-severity badge-${selectedLog.severity ? selectedLog.severity.toLowerCase() : "info"}`}>
+                    {selectedLog.severity || "INFO"}
+                  </span>
+                </div>
+                <div className="detail-item">
                   <label>Timestamp:</label>
                   <span>
                     {new Date(selectedLog.created_at).toLocaleString()}
@@ -324,6 +404,10 @@ export const AuditLogs = () => {
                 <div className="detail-item">
                   <label>Entity ID:</label>
                   <span>{selectedLog.entity_id || "-"}</span>
+                </div>
+                <div className="detail-item">
+                  <label>Correlation ID:</label>
+                  <span className="correlation-id">{selectedLog.correlation_id || "-"}</span>
                 </div>
 
                 {selectedLog.error_message && (
@@ -350,16 +434,42 @@ export const AuditLogs = () => {
                     <span className="user-agent">{selectedLog.user_agent}</span>
                   </div>
                 )}
+
+                {selectedLog.old_values && (
+                  <div className="detail-item full-width">
+                    <label>Old Values (Before):</label>
+                    <pre className="json-display">
+                      {JSON.stringify(selectedLog.old_values, null, 2)}
+                    </pre>
+                  </div>
+                )}
+
+                {selectedLog.new_values && (
+                  <div className="detail-item full-width">
+                    <label>New Values (After):</label>
+                    <pre className="json-display">
+                      {JSON.stringify(selectedLog.new_values, null, 2)}
+                    </pre>
+                  </div>
+                )}
+
+                {selectedLog.hash && (
+                  <div className="detail-item full-width">
+                    <label>Hash (SHA-256):</label>
+                    <span className="hash-value">{selectedLog.hash}</span>
+                  </div>
+                )}
+
+                {selectedLog.previous_hash && (
+                  <div className="detail-item full-width">
+                    <label>Previous Hash:</label>
+                    <span className="hash-value">{selectedLog.previous_hash}</span>
+                  </div>
+                )}
               </div>
             </div>
 
             <div className="modal-footer">
-              <button
-                className="btn-delete"
-                onClick={() => handleDeleteLog(selectedLog.id)}
-              >
-                Delete Log
-              </button>
               <button
                 className="btn-close-modal"
                 onClick={() => setSelectedLog(null)}

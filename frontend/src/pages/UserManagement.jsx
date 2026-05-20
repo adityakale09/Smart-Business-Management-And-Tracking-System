@@ -87,7 +87,7 @@ const UserManagement = () => {
     }
   }
 
-  if (user?.role !== 'admin') {
+  if (user?.role !== 'admin' && user?.role !== 'super_admin') {
     return (
       <div className="user-management-container">
         <div className="access-denied">
@@ -119,6 +119,7 @@ const UserManagement = () => {
                 <th>Username</th>
                 <th>Email</th>
                 <th>Full Name</th>
+                {user?.role === 'super_admin' && <th>Organization</th>}
                 <th>Role</th>
                 <th>Status</th>
                 <th>Actions</th>
@@ -131,6 +132,7 @@ const UserManagement = () => {
                   <td>{u.username}</td>
                   <td>{u.email}</td>
                   <td>{u.full_name}</td>
+                  {user?.role === 'super_admin' && <td>{u.organization_name || '—'}</td>}
                   <td>
                     <span className={`role-badge role-${u.role}`}>
                       {u.role}

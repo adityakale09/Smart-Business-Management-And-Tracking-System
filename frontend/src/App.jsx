@@ -10,17 +10,20 @@ import Analytics from './pages/Analytics'
 import Settings from './pages/Settings'
 import UserManagement from './pages/UserManagement'
 import { AuditLogs } from './pages/AuditLogs'
+import Organizations from './pages/Organizations'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import ErrorBoundary from './components/ErrorBoundary'
 
 function App() {
-  const { isAuthenticated } = useAuthStore()
+  const { isAuthenticated, user } = useAuthStore()
+  const isSuperAdmin = user?.role === 'super_admin'
+  const defaultPath = isSuperAdmin ? '/organizations' : '/dashboard'
 
   return (
     <ErrorBoundary>
       <Routes>
-        <Route path="/login" element={!isAuthenticated ? <Login /> : <Navigate to="/dashboard" />} />
+        <Route path="/login" element={!isAuthenticated ? <Login /> : <Navigate to={defaultPath} />} />
         <Route
           path="/"
           element={
@@ -29,7 +32,7 @@ function App() {
             </ProtectedRoute>
           }
         >
-          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route index element={<Navigate to={defaultPath} replace />} />
           <Route path="dashboard" element={<ErrorBoundary><Dashboard /></ErrorBoundary>} />
           <Route path="sales" element={<ErrorBoundary><Sales /></ErrorBoundary>} />
           <Route path="inventory" element={<ErrorBoundary><Inventory /></ErrorBoundary>} />
@@ -39,6 +42,7 @@ function App() {
           <Route path="settings" element={<ErrorBoundary><Settings /></ErrorBoundary>} />
           <Route path="users" element={<ErrorBoundary><UserManagement /></ErrorBoundary>} />
           <Route path="audit-logs" element={<ErrorBoundary><AuditLogs /></ErrorBoundary>} />
+          <Route path="organizations" element={<ErrorBoundary><Organizations /></ErrorBoundary>} />
         </Route>
       </Routes>
     </ErrorBoundary>

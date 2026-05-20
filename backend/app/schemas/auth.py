@@ -20,6 +20,7 @@ class UserRegister(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     password: str = Field(..., min_length=8)
     full_name: str = Field(..., min_length=2, max_length=100)
+    organization_id: Optional[int] = Field(None, description="Organization ID for multi-tenant isolation (required for registration)")
     # role removed from registration; always assigned default in backend
     
     @field_validator('password')
@@ -51,6 +52,7 @@ class Token(BaseModel):
     token_type: str = "bearer"
     user_id: int
     role: str
+    organization_id: Optional[int] = None
 
 
 class UserResponse(BaseModel):
@@ -61,6 +63,8 @@ class UserResponse(BaseModel):
     full_name: str
     role: str
     is_active: bool
+    organization_id: Optional[int] = None
+    organization_name: Optional[str] = None
     
     class Config:
         from_attributes = True

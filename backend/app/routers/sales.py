@@ -83,7 +83,7 @@ async def get_sales_summary(
     db: Session = Depends(get_db)
 ):
     """Get sales summary statistics."""
-    return get_sales_summary_data(db=db, days=days)
+    return get_sales_summary_data(db=db, current_user=current_user, days=days)
 
 
 @router.get("/{sale_id}/invoice")
@@ -109,7 +109,7 @@ async def export_sales_csv(
     db: Session = Depends(get_db)
 ):
     """Export sales data to CSV."""
-    sales = get_sales_for_export(db=db, start_date=start_date, end_date=end_date)
+    sales = get_sales_for_export(db=db, current_user=current_user, start_date=start_date, end_date=end_date)
     return build_sales_csv_response(sales)
 
 
@@ -121,7 +121,7 @@ async def export_sales_excel(
     db: Session = Depends(get_db)
 ):
     """Export sales data to Excel."""
-    sales = get_sales_for_export(db=db, start_date=start_date, end_date=end_date)
+    sales = get_sales_for_export(db=db, current_user=current_user, start_date=start_date, end_date=end_date)
     return build_sales_excel_response(sales)
 
 

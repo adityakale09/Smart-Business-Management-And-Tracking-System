@@ -9,7 +9,7 @@ from datetime import datetime
 
 class EmployeeCreate(BaseModel):
     """Create employee schema"""
-    employee_id: str
+    employee_id: Optional[str] = None  # Auto-generated if not provided
     user_id: int
     full_name: Optional[str] = None
     department: Optional[str] = None
@@ -19,6 +19,7 @@ class EmployeeCreate(BaseModel):
     phone: Optional[str] = None
     address: Optional[str] = None
     emergency_contact: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class EmployeeUpdate(BaseModel):
@@ -31,6 +32,7 @@ class EmployeeUpdate(BaseModel):
     phone: Optional[str] = None
     address: Optional[str] = None
     emergency_contact: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class EmployeeResponse(BaseModel):
@@ -38,15 +40,18 @@ class EmployeeResponse(BaseModel):
     id: int
     employee_id: str
     user_id: Optional[int] = None
-    full_name: Optional[str]
-    department: Optional[str]
-    position: Optional[str]
-    salary: Optional[float]
-    hire_date: Optional[datetime]
+    full_name: Optional[str] = None
+    department: Optional[str] = None
+    position: Optional[str] = None
+    salary: Optional[float] = None
+    hire_date: Optional[datetime] = None
     status: Optional[str] = "active"
-    phone: Optional[str]
-    address: Optional[str]
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    emergency_contact: Optional[str] = None
+    notes: Optional[str] = None
     created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True

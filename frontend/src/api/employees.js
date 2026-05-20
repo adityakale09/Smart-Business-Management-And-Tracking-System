@@ -21,6 +21,16 @@ export const employeesAPI = {
         return response.data
     },
 
+    delete: async(id) => {
+        const response = await apiClient.delete(`/api/employees/${id}`)
+        return response.data
+    },
+
+    verifyPassword: async(password) => {
+        const response = await apiClient.post('/api/employees/verify-password', { password })
+        return response.data
+    },
+
     getAttendance: async(employeeId, params = {}) => {
         const response = await apiClient.get(`/api/employees/attendance/${employeeId}`, { params })
         return response.data

@@ -3,13 +3,11 @@ Inventory update logic for receipt processing
 """
 
 from sqlalchemy.orm import Session
-from typing import List, Dict
+from typing import Dict
 from app.models.inventory import Inventory
 from app.models.receipt import Receipt, ReceiptItem
 from app.models.user import User
-from app.models.sales import Sale
-from datetime import datetime
-import uuid
+from datetime import datetime, timezone
 
 
 class InventoryUpdater:
@@ -19,24 +17,26 @@ class InventoryUpdater:
         """Initialize with database session"""
         self.db = db
     
-    def process_receipt(self, receipt_data: Dict, user_id: int) -> Dict:
+    def process_receipt(self, receipt_data: Dict, user_id: int, organization_id: int = None) -> Dict:
         """
         Process receipt and update inventory
         
         Args:
             receipt_data: Parsed receipt data
             user_id: ID of user processing the receipt
+            organization_id: Organization ID for multi-tenant isolation
             
         Returns:
             Dictionary with processing results
         """
-        receipt_type = receipt_data.get('receipt_type', 'sale')
+        receipt_type = receipt_data.get('receipt_type', 'purchase')
         items = receipt_data.get('items', [])
-        receipt_date = receipt_data.get('receipt_date') or datetime.now()
+        receipt_date = receipt_data.get('receipt_date') or datetime.now(timezone.utc)
         source = receipt_data.get('source', 'Unknown')
         total_amount = receipt_data.get('total_amount', 0.0)
         image_data = receipt_data.get('image_data')
         currency_code = receipt_data.get('currency_code', 'INR')
+        category = receipt_data.get('category')
         
         # Create receipt record
         receipt = Receipt(
@@ -44,8 +44,10 @@ class InventoryUpdater:
             receipt_type=receipt_type,
             source=source,
             total_amount=total_amount,
+            category=category,
             processed_by=user_id,
-            image_data=image_data
+            image_data=image_data,
+            organization_id=organization_id
         )
         self.db.add(receipt)
         self.db.flush()  # Get receipt ID
@@ -67,36 +69,19 @@ class InventoryUpdater:
                 receipt_id=receipt.id,
                 product_name=product_name,
                 quantity=quantity,
-                price_per_unit=unit_price
+                price_per_unit=unit_price,
+                organization_id=organization_id
             )
             self.db.add(receipt_item)
             
-            # Update inventory
+            # Update inventory - always add stock for receipt processing
             inventory_result = self._update_inventory(
                 product_name=product_name,
                 quantity=quantity,
                 unit_price=unit_price,
-                receipt_type=receipt_type,
-                user_id=user_id
+                user_id=user_id,
+                organization_id=organization_id
             )
-
-            # For sale receipts, persist a sales transaction so analytics/dashboard update correctly.
-            if receipt_type == 'sale' and inventory_result.get('success'):
-                inventory_id = inventory_result.get('inventory_id')
-                sale_total = round(float(unit_price) * int(quantity), 2)
-                sale_record = Sale(
-                    transaction_id=f"RCP-{uuid.uuid4().hex[:8].upper()}",
-                    customer_name=source if source and source != 'Unknown' else 'Receipt Customer',
-                    product_id=inventory_id,
-                    quantity=int(quantity),
-                    unit_price=float(unit_price),
-                    total_amount=sale_total,
-                    payment_method='receipt_upload',
-                    status='completed',
-                    user_id=user_id,
-                    notes=f"Auto-created from receipt #{receipt.id} ({currency_code})"
-                )
-                self.db.add(sale_record)
             
             processed_items.append({
                 'product_name': product_name,
@@ -130,25 +115,28 @@ class InventoryUpdater:
             }
     
     def _update_inventory(self, product_name: str, quantity: int, unit_price: float, 
-                         receipt_type: str, user_id: int) -> Dict:
+                         user_id: int, organization_id: int = None) -> Dict:
         """
-        Update inventory for a product
+        Update inventory for a product - always adds stock from receipt processing
         
         Args:
             product_name: Name of the product
-            quantity: Quantity to add or subtract
+            quantity: Quantity to add
             unit_price: Unit price of the product
-            receipt_type: 'purchase' or 'sale'
             user_id: ID of user making the update
+            organization_id: Organization ID for multi-tenant isolation
             
         Returns:
             Dictionary with update result
         """
         try:
-            # Find existing inventory item by name (case-insensitive)
-            inventory = self.db.query(Inventory).filter(
+            # Find existing inventory item by name (case-insensitive), scoped to org
+            query = self.db.query(Inventory).filter(
                 Inventory.name.ilike(f'%{product_name}%')
-            ).first()
+            )
+            if organization_id is not None:
+                query = query.filter(Inventory.organization_id == int(organization_id))
+            inventory = query.first()
             
             if not inventory:
                 # Create new inventory item if it doesn't exist
@@ -157,53 +145,38 @@ class InventoryUpdater:
                 # Ensure SKU is unique
                 existing_sku = self.db.query(Inventory).filter(Inventory.sku == sku).first()
                 if existing_sku:
-                    sku = f"{sku}-{datetime.now().strftime('%Y%m%d')}"
+                    sku = f"{sku}-{datetime.now(timezone.utc).strftime('%Y%m%d')}"
                 
                 inventory = Inventory(
                     sku=sku,
                     name=product_name,
                     quantity=0,
                     unit_price=unit_price,
-                    status='active'
+                    status='active',
+                    organization_id=organization_id
                 )
                 self.db.add(inventory)
                 self.db.flush()
             
-            # Update quantity based on receipt type
+            # Update quantity - always add stock
             previous_quantity = inventory.quantity
+            inventory.quantity += quantity
+            update_type = 'restock'
+            quantity_change = quantity
+            message = f'Added {quantity} units of {product_name}'
             
-            if receipt_type == 'purchase':
-                # Add stock
-                inventory.quantity += quantity
-                update_type = 'restock'
-                quantity_change = quantity
-                message = f'Added {quantity} units of {product_name}'
-            else:
-                # Deduct stock (sale)
-                if inventory.quantity < quantity:
-                    # Not enough stock
-                    return {
-                        'success': False,
-                        'message': f'Insufficient stock for {product_name}. Available: {inventory.quantity}, Required: {quantity}'
-                    }
-                
-                inventory.quantity -= quantity
-                update_type = 'sale'
-                quantity_change = -quantity
-                message = f'Sold {quantity} units of {product_name}'
-            
-            # Update unit price if provided (use latest price for purchases)
-            if receipt_type == 'purchase' and unit_price > 0:
+            # Update unit price if provided (use latest price)
+            if unit_price > 0:
                 inventory.unit_price = unit_price
             
             # Update last updated timestamp
-            inventory.updated_at = datetime.now()
+            inventory.updated_at = datetime.now(timezone.utc)
             
             # Update status based on quantity
             if inventory.quantity <= 0:
                 inventory.status = 'out_of_stock'
             elif inventory.quantity <= inventory.reorder_level:
-                inventory.status = 'active'  # Keep active but could be flagged for reorder
+                inventory.status = 'active'
             else:
                 inventory.status = 'active'
             
@@ -216,6 +189,7 @@ class InventoryUpdater:
                 quantity_change=quantity_change,
                 previous_quantity=previous_quantity,
                 new_quantity=inventory.quantity,
+                organization_id=organization_id,
                 notes=f'Updated from receipt processing: {message}'
             )
             self.db.add(update_record)
@@ -236,7 +210,7 @@ class InventoryUpdater:
             }
 
 
-def process_receipt_data(db: Session, receipt_data: Dict, user_id: int) -> Dict:
+def process_receipt_data(db: Session, receipt_data: Dict, user_id: int, organization_id: int = None) -> Dict:
     """
     Convenience function to process receipt data
     
@@ -244,10 +218,11 @@ def process_receipt_data(db: Session, receipt_data: Dict, user_id: int) -> Dict:
         db: Database session
         receipt_data: Parsed receipt data
         user_id: ID of user processing the receipt
+        organization_id: Organization ID for multi-tenant isolation
         
     Returns:
         Dictionary with processing results
     """
     updater = InventoryUpdater(db)
-    return updater.process_receipt(receipt_data, user_id)
+    return updater.process_receipt(receipt_data, user_id, organization_id)
 

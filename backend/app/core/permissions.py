@@ -8,6 +8,7 @@ from app.core.security import get_current_user
 
 # Role hierarchy
 ROLES = {
+    "super_admin": 5,
     "admin": 4,
     "manager": 3,
     "employee": 2,
@@ -54,6 +55,24 @@ def require_min_role(min_role: str):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Access denied. Minimum role required: {min_role}, your role: {user_role}"
+            )
+        return current_user
+    return role_checker
+
+
+def require_super_admin():
+    """Require super_admin role - use as a dependency"""
+    def role_checker(current_user: dict = Depends(get_current_user)):
+        user_role = current_user.get("role")
+        if hasattr(user_role, 'value'):
+            user_role = user_role.value
+        elif not isinstance(user_role, str):
+            user_role = str(user_role).lower()
+        
+        if user_role != "super_admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied. Super admin role required, your role: {user_role}"
             )
         return current_user
     return role_checker

@@ -28,7 +28,7 @@ def list_sales(
     """Return paginated sales with role-aware filtering."""
     query = db.query(Sale)
 
-    # Employees can only see their own sales. Admins/managers see all.
+    # Employees can only see their own sales. Admins/managers see their org's sales.
     role = current_user.get("role", "employee")
     # Normalize role string
     if hasattr(role, 'value'):
@@ -37,7 +37,11 @@ def list_sales(
     print(f"[DEBUG] list_sales: user_id={current_user.get('user_id')}, role={role}")
     if role == "employee" or role == "vendor":
         query = query.filter(Sale.user_id == int(current_user["user_id"]))
-    # Admins and managers see all sales (no filter)
+    else:
+        # Admins and managers see only their org's sales
+        org_id = current_user.get("organization_id")
+        if org_id is not None:
+            query = query.filter(Sale.organization_id == int(org_id))
 
     if start_date:
         query = query.filter(Sale.created_at >= start_date)
@@ -69,8 +73,8 @@ def list_sales(
     }
 
 
-def get_sales_summary(db: Session, days: int) -> dict:
-    """Return aggregate summary for a date range."""
+def get_sales_summary(db: Session, current_user: dict, days: int) -> dict:
+    """Return aggregate summary for a date range, scoped to user's organization."""
     end_date = datetime.now()
     start_date = end_date - timedelta(days=days)
 
@@ -78,6 +82,10 @@ def get_sales_summary(db: Session, days: int) -> dict:
         Sale.created_at >= start_date,
         Sale.created_at <= end_date,
     )
+
+    org_id = current_user.get("organization_id")
+    if org_id is not None:
+        base_query = base_query.filter(Sale.organization_id == int(org_id))
 
     total_sales = base_query.count()
     total_revenue = (
@@ -107,6 +115,11 @@ def get_sale_by_id_for_user(db: Session, sale_id: int, current_user: dict) -> Sa
     """Return a sale if visible to current user, otherwise raise HTTP error."""
     sale = db.query(Sale).filter(Sale.id == sale_id).first()
     if not sale:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sale not found")
+
+    # Check organization scope
+    org_id = current_user.get("organization_id")
+    if org_id is not None and sale.organization_id != int(org_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sale not found")
 
     if current_user["role"] == "employee" and sale.user_id != int(current_user["user_id"]):
@@ -148,11 +161,16 @@ def get_invoice_data(db: Session, sale_id: int, current_user: dict) -> Tuple[dic
 
 def get_sales_for_export(
     db: Session,
+    current_user: dict,
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
 ) -> list[Sale]:
-    """Return sales list for export endpoints."""
+    """Return sales list for export endpoints, scoped to user's organization."""
     query = db.query(Sale)
+
+    org_id = current_user.get("organization_id")
+    if org_id is not None:
+        query = query.filter(Sale.organization_id == int(org_id))
 
     if start_date:
         query = query.filter(Sale.created_at >= start_date)

@@ -19,16 +19,17 @@ from app.services.inventory_service import (
     create_inventory_with_audit,
     update_inventory_with_audit
 )
-from app.utils.audit_logger import log_delete
+from app.utils.audit_logger import log_delete, log_update
 
 router = APIRouter()
 
 
 def update_item_status(item: Inventory) -> None:
-    """Helper function to automatically update item status based on quantity"""
+    """Helper function to automatically update item status based on quantity.
+    Low stock threshold is set to 5."""
     if item.quantity <= 0:
         item.status = "out_of_stock"
-    elif item.quantity <= item.reorder_level:
+    elif item.quantity <= 5:
         item.status = "low_stock"
     else:
         item.status = "active"
@@ -60,10 +61,13 @@ async def get_inventory(
 ):
     """Get all inventory items with pagination and search"""
     query = db.query(Inventory)
+    org_id = current_user.get("organization_id")
+    if org_id is not None:
+        query = query.filter(Inventory.organization_id == int(org_id))
     if category:
         query = query.filter(Inventory.category == category)
     if low_stock:
-        query = query.filter(Inventory.quantity <= Inventory.reorder_level)
+        query = query.filter(Inventory.quantity <= 5)
     if search:
         search_term = f"%{search.lower()}%"
         query = query.filter(
@@ -74,6 +78,13 @@ async def get_inventory(
         )
     total = query.count()
     items = query.offset((page - 1) * page_size).limit(page_size).all()
+
+    # Refresh status based on current quantity before returning
+    for item in items:
+        update_item_status(item)
+        db.add(item)
+    db.commit()
+
     serialized_items = [
         InventoryResponse.model_validate(item).model_dump(mode="json")
         for item in items
@@ -95,12 +106,15 @@ async def export_inventory_csv(
 ):
     """Export inventory data to CSV"""
     query = db.query(Inventory)
+    org_id = current_user.get("organization_id")
+    if org_id is not None:
+        query = query.filter(Inventory.organization_id == int(org_id))
     
     if category:
         query = query.filter(Inventory.category == category)
     
     if low_stock:
-        query = query.filter(Inventory.quantity <= Inventory.reorder_level)
+        query = query.filter(Inventory.quantity <= 5)
     
     items = query.all()
     
@@ -127,12 +141,15 @@ async def export_inventory_excel(
 ):
     """Export inventory data to Excel"""
     query = db.query(Inventory)
+    org_id = current_user.get("organization_id")
+    if org_id is not None:
+        query = query.filter(Inventory.organization_id == int(org_id))
     
     if category:
         query = query.filter(Inventory.category == category)
     
     if low_stock:
-        query = query.filter(Inventory.quantity <= Inventory.reorder_level)
+        query = query.filter(Inventory.quantity <= 5)
     
     items = query.all()
     
@@ -157,7 +174,11 @@ async def get_inventory_item(
     db: Session = Depends(get_db)
 ):
     """Get a specific inventory item"""
-    item = db.query(Inventory).filter(Inventory.id == item_id).first()
+    org_id = current_user.get("organization_id")
+    query = db.query(Inventory).filter(Inventory.id == item_id)
+    if org_id is not None:
+        query = query.filter(Inventory.organization_id == int(org_id))
+    item = query.first()
     
     if not item:
         raise HTTPException(
@@ -190,7 +211,11 @@ async def restock_inventory(
     db: Session = Depends(get_db)
 ):
     """Restock inventory item"""
-    item = db.query(Inventory).filter(Inventory.id == item_id).first()
+    org_id = current_user.get("organization_id")
+    query = db.query(Inventory).filter(Inventory.id == item_id)
+    if org_id is not None:
+        query = query.filter(Inventory.organization_id == int(org_id))
+    item = query.first()
     
     if not item:
         raise HTTPException(
@@ -212,7 +237,8 @@ async def restock_inventory(
         quantity_change=quantity,
         previous_quantity=previous_quantity,
         new_quantity=item.quantity,
-        notes=notes
+        notes=notes,
+        organization_id=current_user.get("organization_id")
     )
     
     db.add(update_record)
@@ -246,7 +272,11 @@ async def delete_inventory(
     db: Session = Depends(get_db)
 ):
     """Delete inventory item"""
-    item = db.query(Inventory).filter(Inventory.id == item_id).first()
+    org_id = current_user.get("organization_id")
+    query = db.query(Inventory).filter(Inventory.id == item_id)
+    if org_id is not None:
+        query = query.filter(Inventory.organization_id == int(org_id))
+    item = query.first()
     
     if not item:
         raise HTTPException(
@@ -267,18 +297,25 @@ async def delete_inventory(
     db.delete(item)
     db.commit()
 
+    # Fire-and-forget audit log (best-effort, won't raise)
+    # Use a separate audit session to avoid cross-transaction issues
     try:
-        log_delete(
-            db,
-            "Inventory",
-            item_id,
-            user_id=int(current_user["user_id"]),
-            username=current_user.get("username", "system"),
-            details=item_details,
-            request=request,
-        )
+        from app.database import SessionLocal
+        audit_db = SessionLocal()
+        try:
+            log_delete(
+                audit_db,
+                "Inventory",
+                item_id,
+                user_id=int(current_user["user_id"]),
+                username=current_user.get("username", "system"),
+                details=item_details,
+                request=request,
+            )
+        finally:
+            audit_db.close()
     except Exception:
-        # Inventory deletion is already committed; audit failure should not fail the API response.
+        # Audit logging is best-effort and should never block the main operation
         pass
 
     return {"message": "Inventory item deleted successfully"}
